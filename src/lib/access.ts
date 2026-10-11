@@ -25,6 +25,7 @@ export const PERMISSIONS = {
   "tasks.create": ALL,
   "clients.view": ALL, // педагог — только своих учеников
   "clients.create": STAFF,
+  "clients.edit": STAFF, // карточка, родители, архив, приглашение в Telegram
   "groups.view": ALL, // педагог — только свои группы
   "teachers.view": STAFF,
   "teachers.rates": OWNER, // ставки, начисления, зарплаты
@@ -34,7 +35,7 @@ export const PERMISSIONS = {
   "finance.payroll": OWNER,
   "finance.reports": OWNER,
   "finance.myEarnings": ["TEACHER"],
-  "subscriptions.view": STAFF,
+  "subscriptions.view": STAFF, // счета абонементов: формирование, проверка, отправка
   "leads.view": STAFF,
   "leads.create": STAFF,
   "settings.manage": OWNER,

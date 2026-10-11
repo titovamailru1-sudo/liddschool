@@ -9,7 +9,7 @@ export interface SchoolSettings {
   perLessonDeadlineHours: number; // 24 — дедлайн оплаты урока
   creditOnSchoolCancel: boolean;
   creditOnExcused: boolean;
-  payee: Partial<PayeeDetails>;
+  payee: Partial<PayeeDetails> & { sbpPhone?: string };
 }
 
 export const DEFAULT_SETTINGS: SchoolSettings = {
