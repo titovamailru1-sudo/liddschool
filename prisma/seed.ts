@@ -7,6 +7,8 @@ import bcrypt from "bcryptjs";
 import { firstOfMonth, fromDbDate, localDateOf, nextMonth, parseLocalDate, toDbDate } from "../src/domain/calendar";
 import { occurrencesInMonth, type SeriesInput } from "../src/domain/schedule";
 import { cancelLesson, settle } from "../src/server/lessons/service";
+import { buildInvoiceDraft, issueInvoice } from "../src/server/billing/invoices";
+import { acceptPayment } from "../src/server/billing/payments";
 
 const prisma = new PrismaClient();
 
@@ -141,6 +143,11 @@ const GROUPS = [
 async function wipe() {
   // Порядок важен из-за внешних ключей.
   await prisma.auditLog.deleteMany();
+  await prisma.jobRun.deleteMany();
+  await prisma.message.deleteMany();
+  await prisma.telegramInvite.deleteMany();
+  await prisma.paymentLink.deleteMany();
+  await prisma.invoiceAdjustment.deleteMany();
   await prisma.task.deleteMany();
   await prisma.leadTouch.deleteMany();
   await prisma.lead.deleteMany();
@@ -391,10 +398,38 @@ async function main() {
     creditOnSchoolCancel: true,
     creditOnExcused: true,
     recalcOnScheduleChange: true,
+    // Демо-реквизиты для страницы оплаты — владелец заменяет их в «Настройках».
+    payee: {
+      name: "ДЕМО: ИП Лидд (замените в Настройках)",
+      payeeInn: "250000000000",
+      bankName: "ДЕМО-БАНК",
+      bic: "040500000",
+      personalAcc: "40802810000000000000",
+      correspAcc: "30101810000000000000",
+      sbpPhone: "+7 914 700-00-00",
+    },
   };
   await prisma.setting.createMany({
     data: Object.entries(settings).map(([key, value]) => ({ key, value: value as never })),
   });
+
+  // ── Оплата текущего месяца ──
+  // Абонементщикам — счёт на оставшиеся уроки месяца, выставлен и списан. Почти все оплатили:
+  // у Козлова Саши остаётся долг, Новикова Софья заплатила половину.
+  const monthly = await prisma.client.findMany({ where: { paymentMode: "MONTHLY" }, select: { id: true, fullName: true } });
+  for (const c of monthly) {
+    const draft = await buildInvoiceDraft(prisma, c.id, TODAY.year, TODAY.month);
+    if (!draft.ok) continue;
+    await issueInvoice(prisma, draft.invoiceId, admin.id, localDateOf(new Date()));
+    if (c.fullName === "Козлов Саша") continue;
+    const amount = c.fullName === "Новикова Софья" ? Math.round(draft.total / 2) : draft.total;
+    if (amount > 0) {
+      await acceptPayment(prisma, admin.id, { clientId: c.id, amount, method: "SBP", invoiceId: draft.invoiceId });
+    }
+  }
+  // Поурочники: Алиса внесла предоплату, Егор частично погасил долг.
+  await acceptPayment(prisma, admin.id, { clientId: clientId["Соколова Алиса"], amount: 6000, method: "TRANSFER", comment: "Предоплата за несколько уроков" });
+  await acceptPayment(prisma, admin.id, { clientId: clientId["Фёдоров Егор"], amount: 3400, method: "CASH" });
 
   await prisma.auditLog.create({
     data: { entity: "System", entityId: "seed", action: "seed", userId: owner.id },

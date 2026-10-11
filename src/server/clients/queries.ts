@@ -70,7 +70,11 @@ export async function clientList(user: CurrentUser, f: ClientFilters = {}) {
       status: true,
       phone: true,
       parents: { orderBy: { isPrimary: "desc" }, take: 1, select: { fullName: true, phone: true, telegramChatId: true } },
-      series: { where: { endsOn: null }, select: { subject: true, teacher: { select: { fullName: true, color: true } } } },
+      // Действующие расписания: бессрочные или с датой окончания в будущем.
+      series: {
+        where: { OR: [{ endsOn: null }, { endsOn: { gte: new Date(new Date().toISOString().slice(0, 10)) } }] },
+        select: { subject: true, teacher: { select: { fullName: true, color: true } } },
+      },
       groupMembers: { where: { leftAt: null }, select: { group: { select: { name: true, subject: true } } } },
     },
   });

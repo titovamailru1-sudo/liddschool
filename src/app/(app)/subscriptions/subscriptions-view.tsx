@@ -134,7 +134,7 @@ export function SubscriptionsView({
                       />
                     )}
                   </td>
-                  <td className="px-3 py-2.5 font-medium">
+                  <td className="px-3 py-2.5 font-medium whitespace-nowrap">
                     <Link href={`/clients/${i.clientId}?tab=invoices`} className="hover:text-brand-text hover:underline">
                       {i.clientName}
                     </Link>
@@ -161,13 +161,15 @@ export function SubscriptionsView({
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => setPreview(i)}>
-                        <FileText /> Просмотр
+                      <Button variant="ghost" size="icon-sm" title="Просмотр и отправка" aria-label={`Просмотр: ${i.clientName}`} onClick={() => setPreview(i)}>
+                        <FileText />
                       </Button>
                       {i.status !== "DRAFT" && i.status !== "PAID" && (
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon-sm"
+                          title="Принять оплату"
+                          aria-label={`Принять оплату: ${i.clientName}`}
                           onClick={() =>
                             setPayFor({
                               clientId: i.clientId,
@@ -176,7 +178,7 @@ export function SubscriptionsView({
                             })
                           }
                         >
-                          <Wallet /> Оплата
+                          <Wallet />
                         </Button>
                       )}
                     </div>

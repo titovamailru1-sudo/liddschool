@@ -14,6 +14,8 @@ const env = {
   SEED_PASSWORD: E2E_PASSWORD,
   AUTH_SECRET: "e2e-secret-not-for-production-0000000000",
   AUTH_TRUST_HOST: "true",
+  TELEGRAM_FAKE: "1",
+  APP_URL: `http://localhost:${PORT}`,
 };
 
 export default defineConfig({

@@ -68,6 +68,7 @@ test("администратор: срок действия расписания
   await login(page, "admin");
   await page.goto("/clients");
   await page.getByRole("link", { name: "Иванов Миша" }).click();
+  await page.getByRole("link", { name: "Расписание" }).click();
   await expect(page.getByRole("heading", { name: "Расписание" })).toBeVisible();
   const row = page.getByRole("listitem").filter({ hasText: "вс 16:00" });
   await expect(row.getByText("бессрочно")).toBeVisible();
