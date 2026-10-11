@@ -31,7 +31,10 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 /** Для серверных компонентов и действий: без входа — на /login. */
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) {
+    // Есть cookie сессии, но пользователь не найден или отключён — сбрасываем сессию (иначе петля переадресаций).
+    redirect((await auth()) ? "/session-expired" : "/login");
+  }
   return user;
 }
 

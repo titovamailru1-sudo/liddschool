@@ -4,7 +4,8 @@ import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Вход" };
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ expired?: string }> }) {
+  const { expired } = await searchParams;
   return (
     <main className="flex min-h-screen items-center justify-center bg-canvas p-6">
       <div className="w-full max-w-sm rounded-lg border bg-surface p-8 shadow-sm">
@@ -15,6 +16,11 @@ export default function LoginPage() {
             <p className="text-sm text-text-secondary">Lidd School · математика и информатика</p>
           </div>
         </div>
+        {expired && (
+          <p role="status" className="mb-4 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+            Сессия устарела — войдите снова.
+          </p>
+        )}
         <LoginForm />
       </div>
     </main>
