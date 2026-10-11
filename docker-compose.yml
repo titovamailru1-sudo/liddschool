@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: lidd-crm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lidd
+      POSTGRES_PASSWORD: lidd
+      POSTGRES_DB: lidd_crm
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lidd -d lidd_crm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
