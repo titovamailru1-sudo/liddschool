@@ -268,6 +268,7 @@ function IndividualMark({ lesson }: { lesson: LessonDetail }) {
   const [pending, startTransition] = useTransition();
   const student = lesson.students[0];
   const current = lesson.status === "DONE" ? student?.attendance : null;
+  if (!student && lesson.isTrial) return <TrialMark lesson={lesson} />;
   if (!student) return <p className="text-sm text-text-secondary">У урока нет ученика.</p>;
 
   const mark = (status: AttendanceStatus) =>
@@ -295,6 +296,35 @@ function IndividualMark({ lesson }: { lesson: LessonDetail }) {
       >
         Не пришёл (неув.)
       </Button>
+    </div>
+  );
+}
+
+/** Пробный урок лида: ученика-клиента ещё нет — отмечаем только факт проведения. Для ученика бесплатно, педагогу — фикс. */
+function TrialMark({ lesson }: { lesson: LessonDetail }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <div className="space-y-2">
+      <Button
+        className={cn("w-full", lesson.status === "DONE" && "bg-done hover:bg-done/90")}
+        variant={lesson.status === "DONE" ? "default" : "outline"}
+        disabled={pending || lesson.status === "DONE"}
+        onClick={() =>
+          startTransition(async () => {
+            const r = await settleLessonAction(lesson.id, { kind: "DONE", attendance: {} });
+            if (r.ok) toast.success("Пробный урок отмечен");
+            else toast.error(r.error ?? "Не удалось сохранить");
+          })
+        }
+      >
+        {lesson.status === "DONE" ? "Пробный проведён" : "Пробный урок проведён"}
+      </Button>
+      {lesson.leadId && (
+        <Link href={`/leads?lead=${lesson.leadId}`} className="block text-sm text-brand-text hover:underline">
+          Открыть лида →
+        </Link>
+      )}
+      <p className="text-xs text-text-secondary">Для ученика бесплатно. Если не пришёл — «Отменить урок».</p>
     </div>
   );
 }

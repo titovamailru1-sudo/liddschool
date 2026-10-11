@@ -353,7 +353,8 @@ export async function settle(db: RootDb, actor: Actor, lessonId: string, outcome
     if (lesson.status === "MOVED") throw new DomainError("Урок перенесён — отмечайте новый урок");
     const tariffs = await loadTariffs(tx);
     const students = await loadLessonStudents(tx, lesson, tariffs);
-    if (outcome.kind === "DONE" && !students.length) throw new DomainError("В уроке нет учеников");
+    // Пробный урок лида проходит без ученика-клиента.
+    if (outcome.kind === "DONE" && !students.length && !lesson.isTrial) throw new DomainError("В уроке нет учеников");
     const plan = await loadRatePlan(tx, lesson.teacherId, localDateOf(lesson.startsAt));
     const settlement = settleLesson({
       durationMin: lesson.durationMin,
@@ -364,6 +365,15 @@ export async function settle(db: RootDb, actor: Actor, lessonId: string, outcome
       plan,
     });
     await applySettlement(tx, actor, lesson, settlement, extra);
+
+    // Пробный урок лида проведён — лид переходит на этап «Пробный проведён».
+    if (lesson.isTrial && settlement.status === "DONE") {
+      const lead = await tx.lead.findUnique({ where: { trialLessonId: lesson.id } });
+      if (lead && lead.stage === "TRIAL_SCHEDULED") {
+        await tx.lead.update({ where: { id: lead.id }, data: { stage: "TRIAL_DONE", lastTouchAt: new Date() } });
+        await tx.leadTouch.create({ data: { leadId: lead.id, kind: "stage", text: "Пробный урок проведён", authorId: actor.userId } });
+      }
+    }
     return settlement;
   });
 }
@@ -388,7 +398,8 @@ export async function cancelLesson(db: RootDb, actor: Actor, lessonId: string, i
     throw new DomainError("Групповой урок отменяет школа; пропуск ученика отмечается в посещаемости");
   }
   let outcome: LessonOutcome = { kind: "CANCELLED", by: input.by };
-  if (input.by === "CLIENT") {
+  // Пробный урок бесплатный: отмена любой стороной — просто отмена, без денег.
+  if (input.by === "CLIENT" && !lesson.isTrial) {
     const excused =
       input.excused ?? classifyClientCancellation(lesson.startsAt, input.notifiedAt ?? new Date()) === "EXCUSED";
     if (!excused) outcome = { kind: "DONE", attendance: { [lesson.clientId!]: "ABSENT_UNEXCUSED" } };

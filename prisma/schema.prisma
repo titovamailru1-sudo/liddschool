@@ -179,6 +179,7 @@ model User {
   seriesCreated   ScheduleSeries[]    @relation("SeriesCreatedBy")
   payrollsClosed  Payroll[]           @relation("PayrollClosedBy")
   invites         UserInvite[]        @relation("UserInvites")
+  taskComments    TaskComment[]       @relation("TaskCommentAuthor")
 }
 
 model Teacher {
@@ -618,14 +619,18 @@ model PayrollPayment {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
-  category    String // аренда, реклама, материалы…
-  amount      Int
-  date        DateTime
-  comment     String?
-  createdAt   DateTime @default(now())
-  createdById String?
-  createdBy   User?    @relation("ExpenseAuthor", fields: [createdById], references: [id])
+  id           String    @id @default(cuid())
+  category     String // аренда, реклама, материалы…
+  amount       Int
+  date         DateTime  @db.Date
+  comment      String?
+  cancelledAt  DateTime? // ошибочная запись: не удаляется, а отменяется с причиной
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+  createdById  String?
+  createdBy    User?     @relation("ExpenseAuthor", fields: [createdById], references: [id])
+
+  @@index([date])
 }
 
 // ─────────────────────────── Задачи и лиды ───────────────────────────
@@ -653,7 +658,19 @@ model Task {
   doneAt      DateTime?
   createdAt   DateTime     @default(now())
 
+  comments TaskComment[]
+
   @@index([assigneeId, status])
+}
+
+model TaskComment {
+  id       String   @id @default(cuid())
+  taskId   String
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  text     String
+  authorId String?
+  author   User?    @relation("TaskCommentAuthor", fields: [authorId], references: [id])
+  at       DateTime @default(now())
 }
 
 model Lead {
@@ -676,20 +693,26 @@ model Lead {
   convertedClientId String?    @unique
   convertedClient   Client?    @relation(fields: [convertedClientId], references: [id])
   lastTouchAt       DateTime?
+  comment           String?
   createdAt         DateTime   @default(now())
 
   touches LeadTouch[]
   tasks   Task[]
+
+  @@index([stage])
 }
 
 model LeadTouch {
   id       String   @id @default(cuid())
   leadId   String
   lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  kind     String   @default("note") // call — звонок, message — сообщение, note — заметка, stage — смена этапа
   text     String
   authorId String?
   author   User?    @relation(fields: [authorId], references: [id])
   at       DateTime @default(now())
+
+  @@index([leadId, at])
 }
 
 // ─────────────────────────── Сообщения и оплата по ссылке ───────────────────────────

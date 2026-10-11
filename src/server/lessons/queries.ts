@@ -30,6 +30,14 @@ export interface CalendarLesson {
   atRisk: boolean; // поурочник не оплатил к дедлайну
 }
 
+/** Название урока: ученик, группа или пробный урок лида. */
+export function lessonTitle(l: { client?: { fullName: string } | null; group?: { name: string } | null; trialForLead?: { childName: string } | null }) {
+  if (l.client) return l.client.fullName;
+  if (l.group) return `Группа ${l.group.name}`;
+  if (l.trialForLead) return `Пробный: ${l.trialForLead.childName}`;
+  return "Урок";
+}
+
 /** Педагог видит только свои уроки — фильтр всегда на сервере. */
 function scope(user: CurrentUser): Prisma.LessonWhereInput {
   return user.role === "TEACHER" ? { teacherId: user.teacherId ?? "—" } : {};
@@ -63,6 +71,7 @@ export async function calendarLessons(
       teacher: { select: { id: true, fullName: true, color: true } },
       client: { select: { fullName: true } },
       group: { select: { name: true } },
+      trialForLead: { select: { childName: true } },
       attendances: { select: { status: true } },
       paymentLinks: { where: { atRiskAt: { not: null } }, select: { id: true } },
     },
@@ -74,7 +83,7 @@ export async function calendarLessons(
     teacherId: l.teacher.id,
     teacherName: l.teacher.fullName,
     teacherColor: l.teacher.color,
-    title: l.client?.fullName ?? `Группа ${l.group?.name ?? ""}`,
+    title: lessonTitle(l),
     subject: l.subject,
     isGroup: !!l.groupId,
     status: lessonDisplayStatus(l.status, l.cancelledBy, !!l.groupId, l.attendances.map((a) => a.status)),
@@ -109,6 +118,7 @@ export async function lessonDetail(user: CurrentUser, id: string) {
       teacher: { select: { id: true, fullName: true, color: true } },
       client: { select: { id: true, fullName: true, paymentMode: true } },
       group: { select: { id: true, name: true } },
+      trialForLead: { select: { id: true, childName: true } },
       attendances: { select: { clientId: true, status: true, price: true, paymentMode: true } },
       accruals: { select: { amount: true, hours: true, basis: true } },
       movedTo: { select: { id: true, startsAt: true } },
@@ -170,7 +180,8 @@ export async function lessonDetail(user: CurrentUser, id: string) {
     cancelReason: l.cancelReason,
     isGroup: !!l.groupId,
     isTrial: l.isTrial,
-    title: l.client?.fullName ?? `Группа ${l.group?.name ?? ""}`,
+    title: lessonTitle(l),
+    leadId: l.trialForLead?.id ?? null,
     clientId: l.client?.id ?? null,
     groupId: l.group?.id ?? null,
     teacher: l.teacher,

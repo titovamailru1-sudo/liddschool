@@ -7,6 +7,7 @@ import { chargeInvoice, generateDrafts, refreshInvoiceStatus } from "./billing/i
 import { processPerLesson } from "./billing/perLesson";
 import { appUrl, loadSettings } from "./billing/settings";
 import { ensureAutoTask } from "./billing/tasks";
+import { debtTasks, idleLeadTasks, unmarkedLessonTasks } from "./tasks/auto";
 import type { Db } from "./lessons/context";
 import { deliverQueued, queueMessage } from "./messaging/outbox";
 import type { MessageSender } from "./messaging/telegram";
@@ -122,6 +123,9 @@ export async function runJobs(db: RootDb, now: Date, sender: MessageSender | nul
   if (day >= settings.overdueDay) result.overdue = await processOverdue(db, today);
   result.perLesson = await processPerLesson(db, now);
   if (day >= 5) result.payrollTask = await payrollPayoutTask(db, today);
+  result.unmarked = await unmarkedLessonTasks(db, now);
+  result.idleLeads = await idleLeadTasks(db, now);
+  result.debts = await debtTasks(db, now);
   result.messages = await deliverQueued(db, sender);
   return result;
 }
