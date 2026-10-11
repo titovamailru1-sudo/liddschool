@@ -1,0 +1,610 @@
+// Lidd School CRM — схема базы данных (черновик для этапа 1).
+// Деньги — целые рубли (Int). Часы — Decimal(5,2). Даты — UTC.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Справочники и enum ───────────────────────────
+
+enum Role {
+  OWNER
+  ADMIN
+  TEACHER
+}
+
+enum Program {
+  EXAM   // ОГЭ / ЕГЭ
+  SCHOOL // школьная программа
+}
+
+enum PaymentMode {
+  MONTHLY    // абонемент на месяц
+  PER_LESSON // поурочно, за 24 ч до урока
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum LessonFormat {
+  OFFLINE
+  ONLINE
+}
+
+enum LessonStatus {
+  PLANNED
+  DONE
+  CANCELLED // отменён (кем — в cancelledBy)
+  MOVED     // перенесён (создаётся новый урок, movedToId)
+}
+
+enum CancelledBy {
+  SCHOOL
+  CLIENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT_EXCUSED   // уважительный (предупредили за 24 ч)
+  ABSENT_UNEXCUSED // неуважительный
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PAID
+  PARTIALLY_PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  SBP
+  ONLINE
+}
+
+enum LedgerType {
+  PAYMENT          // + поступление
+  LESSON_CHARGE    // − списание за проведённый урок (поурочная оплата)
+  INVOICE_CHARGE   // − начисление по счёту абонемента
+  CREDIT_TRANSFER  // + перенос стоимости на следующий месяц
+  REFUND           // − возврат денег
+  ADJUSTMENT       // ± ручная корректировка (обязателен комментарий)
+}
+
+enum RateType {
+  PER_HOUR    // ₽ за урок-час
+  PERCENT     // % от стоимости урока для клиента
+  PER_LESSON  // фикс за урок
+}
+
+enum BonusApply {
+  WHOLE_MONTH     // процент ко всей зарплате месяца
+  ABOVE_THRESHOLD // только к часам сверх порога (прогрессивно)
+}
+
+enum PayrollStatus {
+  OPEN    // месяц идёт
+  CLOSED  // месяц закрыт, сумма зафиксирована
+  PAID
+}
+
+enum TaskStatus {
+  NEW
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  TRIAL_SCHEDULED
+  TRIAL_DONE
+  WON
+  LOST
+}
+
+enum LeadSource {
+  SITE
+  AVITO
+  VK
+  REFERRAL // сарафанное радио
+  OTHER
+}
+
+enum Channel {
+  TELEGRAM
+  WHATSAPP
+  SMS
+}
+
+// ─────────────────────────── Пользователи и педагоги ───────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  teacher         Teacher?
+  assignedTasks   Task[]         @relation("TaskAssignee")
+  createdTasks    Task[]         @relation("TaskCreator")
+  ownedLeads      Lead[]
+  leadTouches     LeadTouch[]
+  ledgerEntries   LedgerEntry[]
+  payments        Payment[]
+  auditLogs       AuditLog[]
+}
+
+model Teacher {
+  id        String   @id @default(cuid())
+  userId    String?  @unique
+  user      User?    @relation(fields: [userId], references: [id])
+  fullName  String
+  phone     String?
+  color     String   // hex для расписания
+  subjects  String[]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  ratePlans TeacherRatePlan[]
+  series    ScheduleSeries[]
+  lessons   Lesson[]
+  groups    Group[]
+  accruals  TeacherAccrual[]
+  payrolls  Payroll[]
+}
+
+// ─────────────────────────── Ставки педагогов ───────────────────────────
+
+model RatePlan {
+  id               String     @id @default(cuid())
+  name             String     // «Стандартный шаблон школы»
+  isDefault        Boolean    @default(false)
+  type             RateType   @default(PER_HOUR)
+  baseAmount       Int        @default(700) // ₽ за урок-час / за урок
+  percent          Decimal?   @db.Decimal(5, 2) // для type = PERCENT
+  groupPerStudent  Int        @default(100) // доплата за каждого присутствующего в группе
+  trialFixed       Int        @default(500) // оплата пробного урока
+  payForUnexcused  Boolean    @default(false)
+  bonusApply       BonusApply @default(WHOLE_MONTH)
+  createdAt        DateTime   @default(now())
+
+  tiers    RateTier[]
+  teachers TeacherRatePlan[]
+}
+
+model RateTier {
+  id             String   @id @default(cuid())
+  planId         String
+  plan           RatePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  thresholdHours Decimal  @db.Decimal(5, 2) // 30, 45
+  bonusPercent   Decimal  @db.Decimal(5, 2) // 10, 15
+
+  @@unique([planId, thresholdHours])
+}
+
+// История назначений ставки педагогу
+model TeacherRatePlan {
+  id        String   @id @default(cuid())
+  teacherId String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
+  planId    String
+  plan      RatePlan @relation(fields: [planId], references: [id])
+  validFrom DateTime
+  createdAt DateTime @default(now())
+
+  @@index([teacherId, validFrom])
+}
+
+// ─────────────────────────── Клиенты ───────────────────────────
+
+model Client {
+  id          String       @id @default(cuid())
+  fullName    String
+  grade       Int?         // класс
+  school      String?
+  phone       String?
+  status      ClientStatus @default(ACTIVE)
+  program     Program
+  paymentMode PaymentMode
+  goal        String?
+  source      LeadSource?
+  notes       String?
+  createdAt   DateTime     @default(now())
+
+  parents       Parent[]
+  groupMembers  GroupMember[]
+  series        ScheduleSeries[]
+  lessons       Lesson[]
+  attendances   Attendance[]
+  invoices      MonthlyInvoice[]
+  payments      Payment[]
+  ledgerEntries LedgerEntry[]
+  tasks         Task[]
+  convertedFrom Lead?
+}
+
+model Parent {
+  id               String   @id @default(cuid())
+  clientId         String
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fullName         String
+  relation         String?  // мама, папа…
+  phone            String
+  telegramChatId   String?
+  preferredChannel Channel  @default(TELEGRAM)
+  isPrimary        Boolean  @default(true)
+}
+
+// ─────────────────────────── Тарифы ───────────────────────────
+
+model Tariff {
+  id           String      @id @default(cuid())
+  program      Program
+  paymentMode  PaymentMode
+  pricePerHour Int         // 1500 / 1700 / 1300 / 1500
+  validFrom    DateTime
+
+  @@unique([program, paymentMode, validFrom])
+}
+
+// ─────────────────────────── Расписание ───────────────────────────
+
+model Room {
+  id      String   @id @default(cuid())
+  name    String   @unique // «Каб. 1»
+  series  ScheduleSeries[]
+  lessons Lesson[]
+}
+
+model Group {
+  id          String        @id @default(cuid())
+  name        String        // «ОГЭ-9А»
+  subject     String
+  program     Program
+  teacherId   String
+  teacher     Teacher       @relation(fields: [teacherId], references: [id])
+  maxStudents Int           @default(8)
+  isActive    Boolean       @default(true)
+
+  members GroupMember[]
+  series  ScheduleSeries[]
+  lessons Lesson[]
+}
+
+model GroupMember {
+  id       String    @id @default(cuid())
+  groupId  String
+  group    Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  clientId String
+  client   Client    @relation(fields: [clientId], references: [id])
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  @@unique([groupId, clientId])
+}
+
+// Регулярное занятие: «вт 16:00, 60 мин, Python, Ким Д.». Из серий генерируются уроки и считаются абонементы.
+model ScheduleSeries {
+  id          String       @id @default(cuid())
+  teacherId   String
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  clientId    String?      // индивидуальное
+  client      Client?      @relation(fields: [clientId], references: [id])
+  groupId     String?      // групповое
+  group       Group?       @relation(fields: [groupId], references: [id])
+  subject     String
+  program     Program
+  weekday     Int          // 1 = пн … 7 = вс (ISO)
+  startTime   String       // «16:00», в поясе школы
+  durationMin Int          // 45 / 60 / 90
+  format      LessonFormat @default(OFFLINE)
+  roomId      String?
+  room        Room?        @relation(fields: [roomId], references: [id])
+  onlineUrl   String?
+  startsOn    DateTime
+  endsOn      DateTime?
+  createdAt   DateTime     @default(now())
+
+  lessons Lesson[]
+}
+
+model Lesson {
+  id          String       @id @default(cuid())
+  seriesId    String?
+  series      ScheduleSeries? @relation(fields: [seriesId], references: [id])
+  teacherId   String
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  clientId    String?
+  client      Client?      @relation(fields: [clientId], references: [id])
+  groupId     String?
+  group       Group?       @relation(fields: [groupId], references: [id])
+  subject     String
+  program     Program
+  startsAt    DateTime
+  durationMin Int
+  format      LessonFormat @default(OFFLINE)
+  roomId      String?
+  room        Room?        @relation(fields: [roomId], references: [id])
+  onlineUrl   String?
+  status      LessonStatus @default(PLANNED)
+  cancelledBy CancelledBy?
+  movedToId   String?
+  isTrial     Boolean      @default(false)
+  topic       String?
+  homework    String?
+  comment     String?
+  markedAt    DateTime?
+  createdAt   DateTime     @default(now())
+
+  attendances  Attendance[]
+  invoiceItems InvoiceItem[]
+  accruals     TeacherAccrual[]
+  payments     Payment[]
+  tasks        Task[]
+  trialForLead Lead?
+
+  @@index([teacherId, startsAt])
+  @@index([roomId, startsAt])
+  @@index([clientId, startsAt])
+}
+
+// Посещаемость (для индивидуального урока — одна запись)
+model Attendance {
+  id          String           @id @default(cuid())
+  lessonId    String
+  lesson      Lesson           @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  clientId    String
+  client      Client           @relation(fields: [clientId], references: [id])
+  status      AttendanceStatus
+  paymentMode PaymentMode      // снимок способа оплаты на момент урока
+  price       Int              // стоимость урока для клиента (часы × тариф)
+  isPaid      Boolean          @default(false) // для поурочной оплаты
+
+  @@unique([lessonId, clientId])
+}
+
+// ─────────────────────────── Деньги клиентов ───────────────────────────
+
+model MonthlyInvoice {
+  id              String        @id @default(cuid())
+  clientId        String
+  client          Client        @relation(fields: [clientId], references: [id])
+  month           DateTime      // 1-е число месяца
+  lessonsCount    Int
+  hours           Decimal       @db.Decimal(6, 2)
+  pricePerHour    Int           // тариф абонемента на момент расчёта
+  amount          Int           // по абонементу
+  perLessonAmount Int           // сколько вышло бы поурочно (для сообщения)
+  debtIncluded    Int           @default(0)
+  creditApplied   Int           @default(0) // перенос с прошлого месяца
+  total           Int
+  dueDate         DateTime
+  status          InvoiceStatus @default(DRAFT)
+  messageText     String?
+  sentAt          DateTime?
+  viewedAt        DateTime?
+  paidAt          DateTime?
+  createdAt       DateTime      @default(now())
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@unique([clientId, month])
+}
+
+model InvoiceItem {
+  id        String         @id @default(cuid())
+  invoiceId String
+  invoice   MonthlyInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  lessonId  String
+  lesson    Lesson         @relation(fields: [lessonId], references: [id])
+  hours     Decimal        @db.Decimal(5, 2)
+  amount    Int
+}
+
+model Payment {
+  id           String          @id @default(cuid())
+  clientId     String
+  client       Client          @relation(fields: [clientId], references: [id])
+  amount       Int             // > 0
+  method       PaymentMethod
+  invoiceId    String?         // оплата абонемента
+  invoice      MonthlyInvoice? @relation(fields: [invoiceId], references: [id])
+  lessonId     String?         // поурочная оплата
+  lesson       Lesson?         @relation(fields: [lessonId], references: [id])
+  receivedById String?
+  receivedBy   User?           @relation(fields: [receivedById], references: [id])
+  comment      String?
+  paidAt       DateTime        @default(now())
+  createdAt    DateTime        @default(now())
+
+  ledgerEntries LedgerEntry[]
+}
+
+// Единый журнал движения денег клиента. Баланс = сумма amount.
+model LedgerEntry {
+  id          String     @id @default(cuid())
+  clientId    String
+  client      Client     @relation(fields: [clientId], references: [id])
+  type        LedgerType
+  amount      Int        // + поступление / − начисление
+  paymentId   String?
+  payment     Payment?   @relation(fields: [paymentId], references: [id])
+  lessonId    String?
+  invoiceId   String?
+  comment     String?
+  createdById String?
+  createdBy   User?      @relation(fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+// ─────────────────────────── Зарплаты ───────────────────────────
+
+// Начисление педагогу за конкретный урок (пересчитывается при изменении отметки)
+model TeacherAccrual {
+  id        String   @id @default(cuid())
+  teacherId String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
+  lessonId  String   @unique
+  lesson    Lesson   @relation(fields: [lessonId], references: [id])
+  hours     Decimal  @db.Decimal(5, 2) // 0 для пробного
+  amount    Int      // без надбавки за объём
+  basis     String   // «1,5 ч × 700 ₽ + 5 × 100 ₽»
+  createdAt DateTime @default(now())
+}
+
+model Payroll {
+  id           String        @id @default(cuid())
+  teacherId    String
+  teacher      Teacher       @relation(fields: [teacherId], references: [id])
+  month        DateTime      // 1-е число
+  hours        Decimal       @db.Decimal(6, 2)
+  baseAmount   Int
+  bonusPercent Decimal       @db.Decimal(5, 2)
+  bonusAmount  Int
+  adjustments  Int           @default(0)
+  total        Int
+  status       PayrollStatus @default(OPEN)
+
+  items    PayrollAdjustment[]
+  payouts  PayrollPayment[]
+
+  @@unique([teacherId, month])
+}
+
+model PayrollAdjustment {
+  id        String   @id @default(cuid())
+  payrollId String
+  payroll   Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  amount    Int      // премия «+», штраф «−»
+  reason    String
+  createdAt DateTime @default(now())
+}
+
+model PayrollPayment {
+  id        String   @id @default(cuid())
+  payrollId String
+  payroll   Payroll  @relation(fields: [payrollId], references: [id])
+  amount    Int
+  paidAt    DateTime
+  comment   String?
+}
+
+model Expense {
+  id        String   @id @default(cuid())
+  category  String   // аренда, реклама, материалы…
+  amount    Int
+  date      DateTime
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────── Задачи и лиды ───────────────────────────
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  type        String       // debt, subscription, lesson, lead, transfer, other
+  status      TaskStatus   @default(NEW)
+  priority    TaskPriority @default(NORMAL)
+  dueAt       DateTime?
+  assigneeId  String?
+  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdById String?
+  createdBy   User?        @relation("TaskCreator", fields: [createdById], references: [id])
+  clientId    String?
+  client      Client?      @relation(fields: [clientId], references: [id])
+  leadId      String?
+  lead        Lead?        @relation(fields: [leadId], references: [id])
+  lessonId    String?
+  lesson      Lesson?      @relation(fields: [lessonId], references: [id])
+  isAuto      Boolean      @default(false)
+  autoKey     String?      @unique // для дедупликации автозадач
+  doneAt      DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([assigneeId, status])
+}
+
+model Lead {
+  id                String      @id @default(cuid())
+  childName         String
+  grade             Int?
+  parentName        String?
+  phone             String
+  source            LeadSource
+  subject           String?
+  program           Program?
+  goal              String?
+  preferredTime     String?
+  stage             LeadStage   @default(NEW)
+  lostReason        String?
+  ownerId           String?
+  owner             User?       @relation(fields: [ownerId], references: [id])
+  trialLessonId     String?     @unique
+  trialLesson       Lesson?     @relation(fields: [trialLessonId], references: [id])
+  convertedClientId String?     @unique
+  convertedClient   Client?     @relation(fields: [convertedClientId], references: [id])
+  lastTouchAt       DateTime?
+  createdAt         DateTime    @default(now())
+
+  touches LeadTouch[]
+  tasks   Task[]
+}
+
+model LeadTouch {
+  id       String   @id @default(cuid())
+  leadId   String
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  text     String
+  authorId String?
+  author   User?    @relation(fields: [authorId], references: [id])
+  at       DateTime @default(now())
+}
+
+// ─────────────────────────── Настройки и аудит ───────────────────────────
+
+// Ключ-значение: invoiceDay=25, invoiceDueDay=1, overdueDay=3, perLessonLinkHours=48,
+// perLessonDeadlineHours=24, creditOnSchoolCancel=true, creditOnExcused=true, recalcOnScheduleChange=true
+model Setting {
+  key   String @id
+  value Json
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  entity   String
+  entityId String
+  action   String
+  diff     Json?
+  userId   String?
+  user     User?    @relation(fields: [userId], references: [id])
+  at       DateTime @default(now())
+
+  @@index([entity, entityId])
+}
