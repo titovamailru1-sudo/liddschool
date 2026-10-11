@@ -174,7 +174,7 @@ export function renderInvoiceMessage(m: InvoiceMessageInput): string {
         `абонемент выгоднее на ${formatRub(calc.savings)}.`,
     );
   }
-  if (calc.adjustmentsTotal !== 0) {
+  if (calc.adjustmentsTotal !== 0 || m.adjustmentNotes?.length) {
     const notes = m.adjustmentNotes?.length ? ` (${m.adjustmentNotes.map((a) => a.reason).join("; ")})` : "";
     lines.push(`Перерасчёт за прошлый месяц: ${signedRub(calc.adjustmentsTotal)}${notes}.`);
   }

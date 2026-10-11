@@ -17,7 +17,8 @@
     "postinstall": "prisma generate",
     "test:int": "vitest run --project integration",
     "test:all": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "worker": "tsx --env-file=.env scripts/worker.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
