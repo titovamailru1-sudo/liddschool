@@ -1,24 +1,24 @@
 import Link from "next/link";
-import { ChartColumn, Receipt, Wallet, WalletCards, type LucideIcon } from "lucide-react";
+import { Wallet, WalletCards } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { addDays, firstOfMonth, lastOfMonth, localDateOf, parseLocalDate } from "@/domain/calendar";
-import { financeTabsFor, type FinanceTab } from "@/lib/access";
+import { financeTabsFor } from "@/lib/access";
 import { cn } from "@/lib/utils";
 import { debtors, paymentsJournal, staffList } from "@/server/billing/queries";
 import { now } from "@/server/clock";
 import { prisma } from "@/server/db";
 import { requirePermission } from "@/server/session";
 import { payrollSheet, teacherMonth } from "@/server/payroll/payroll";
+import { expenseCategories, listExpenses } from "@/server/expenses";
+import { fullReport } from "@/server/reports";
 import { DebtsTab, PaymentsTab } from "./finance-tabs";
+import { periodFromParams } from "./period";
+import { ExpensesTab, ReportsTab } from "./reports-views";
 import { MyEarningsView, PayrollSheetView } from "./payroll-views";
 
 export const metadata = { title: "Финансы" };
 
-const PLACEHOLDER: Partial<Record<FinanceTab, { icon: LucideIcon; title: string; hint: string }>> = {
-  expenses: { icon: Receipt, title: "Расходов пока нет", hint: "Аренда, реклама, материалы — по статьям, этап 5." },
-  reports: { icon: ChartColumn, title: "Отчётов пока нет", hint: "Выручка, зарплаты, расходы и прибыль — этап 5." },
-};
 
 /** Месяц из адреса (?month=2026-10) или текущий; соседние — для навигации. */
 function monthParam(v: string | undefined, today: string) {
@@ -77,9 +77,15 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     ) : (
       <EmptyState icon={Wallet} title="Учётная запись не привязана к педагогу" hint="Обратитесь к администратору школы." />
     );
+  } else if (active.key === "expenses") {
+    const { kind, period } = periodFromParams(sp, today);
+    const [data, categories] = await Promise.all([listExpenses(prisma, period.from, period.to), expenseCategories(prisma)]);
+    body = <ExpensesTab data={data} categories={categories} kind={kind} from={period.from} to={period.to} today={today} />;
   } else {
-    const p = PLACEHOLDER[active.key]!;
-    body = <EmptyState icon={p.icon} title={p.title} hint={p.hint} />;
+    const { kind, period, previous } = periodFromParams(sp, today);
+    const report = await fullReport(prisma, period, previous);
+    const q = new URLSearchParams(Object.entries(sp).filter(([k, v]) => v && ["period", "at", "from", "to"].includes(k)) as [string, string][]);
+    body = <ReportsTab report={report} kind={kind} exportHref={`/finance/reports/export?${q.toString()}`} />;
   }
 
   return (

@@ -14,7 +14,10 @@ import { clientCard } from "@/server/clients/queries";
 import { lessonFormOptions } from "@/server/lessons/queries";
 import { requirePermission } from "@/server/session";
 import { ClientActions } from "./client-actions";
-import { ClientMoney, ClientMessages, ClientProfile } from "./client-tabs";
+import { prisma } from "@/server/db";
+import { leadOfClient } from "@/server/leads/service";
+import { listTasks } from "@/server/tasks/service";
+import { ClientMoney, ClientMessages, ClientProfile, ClientTasks } from "./client-tabs";
 import { ClientSchedule } from "./client-schedule";
 
 const TABS = [
@@ -24,6 +27,7 @@ const TABS = [
   { key: "payments", label: "Платежи", money: true },
   { key: "visits", label: "Посещения" },
   { key: "messages", label: "Сообщения", money: true },
+  { key: "tasks", label: "Задачи", money: true },
 ] as const;
 
 export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -40,9 +44,11 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
   const canEdit = can(user.role, "clients.edit");
   const tabs = TABS.filter((t) => !("money" in t) || money);
   const active = tabs.find((t) => t.key === tab) ?? tabs[0];
-  const [options, finance] = await Promise.all([
+  const [options, finance, leadHistory, tasks] = await Promise.all([
     canManage ? lessonFormOptions(user) : Promise.resolve(null),
     money ? clientFinance(card.id) : Promise.resolve(null),
+    money ? leadOfClient(prisma, card.id) : Promise.resolve(null),
+    money && active.key === "tasks" ? listTasks(prisma, user, { clientId: card.id, showDone: true }, at) : Promise.resolve([]),
   ]);
   const { year, month } = parseLocalDate(today);
   const next = nextMonth(year, month);
@@ -97,7 +103,8 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
         ))}
       </nav>
 
-      {active.key === "profile" && <ClientProfile card={card} canEdit={canEdit} />}
+      {active.key === "profile" && <ClientProfile card={card} canEdit={canEdit} leadHistory={leadHistory} />}
+      {active.key === "tasks" && <ClientTasks clientId={card.id} tasks={tasks} />}
       {active.key === "schedule" && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <ClientSchedule clientId={card.id} series={card.series} groups={card.groups} canManage={canManage} options={options} today={today} />

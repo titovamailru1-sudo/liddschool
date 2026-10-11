@@ -13,6 +13,9 @@ import { formatDate, formatRub, formatTime, monthName } from "@/domain/format";
 import { cn } from "@/lib/utils";
 import type { ClientFinance } from "@/server/billing/queries";
 import type { ClientCard } from "@/server/clients/queries";
+import type { TaskRow } from "@/server/tasks/service";
+import { TASK_STATUS } from "@/lib/status";
+import Link from "next/link";
 import { telegramInviteAction } from "../actions";
 
 const METHOD = Object.fromEntries(PAYMENT_METHODS.map((m) => [m.value, m.label])) as Record<string, string>;
@@ -27,9 +30,30 @@ const LEDGER = {
 const SOURCE = { SITE: "Сайт", AVITO: "Авито", VK: "ВКонтакте", REFERRAL: "Сарафанное радио", OTHER: "Другое" } as Record<string, string>;
 const KIND = { invoice: "Счёт за месяц", lesson_payment: "Оплата урока", invoice_reminder: "Напоминание", other: "Сообщение" } as Record<string, string>;
 
-export function ClientProfile({ card, canEdit }: { card: ClientCard; canEdit: boolean }) {
+type LeadHistory = { id: string; source: string; createdAt: string; touches: { id: string; kind: string; text: string; at: string; author: string }[] } | null;
+
+export function ClientProfile({ card, canEdit, leadHistory }: { card: ClientCard; canEdit: boolean; leadHistory?: LeadHistory }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      {leadHistory && (
+        <section className="rounded-lg border bg-surface p-4 text-sm lg:col-span-2">
+          <h2 className="mb-2 font-semibold">
+            Пришёл из заявки · {SOURCE[leadHistory.source] ?? leadHistory.source} · {formatDate(new Date(leadHistory.createdAt))}
+          </h2>
+          <ul className="space-y-1">
+            {leadHistory.touches.map((t) => (
+              <li key={t.id} className="flex gap-3">
+                <span className="w-32 shrink-0 text-text-secondary">
+                  {formatDate(new Date(t.at))} {formatTime(new Date(t.at))}
+                </span>
+                <span>
+                  {t.text} <span className="text-text-secondary">· {t.author}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="space-y-2 rounded-lg border bg-surface p-4 text-sm">
         <h2 className="mb-2 font-semibold">Ученик</h2>
         <Row label="Класс" value={card.grade ? `${card.grade}` : "—"} />
@@ -260,6 +284,34 @@ export function ClientMoney({
         )}
       </section>
     </div>
+  );
+}
+
+export function ClientTasks({ clientId, tasks }: { clientId: string; tasks: TaskRow[] }) {
+  return (
+    <section className="rounded-lg border bg-surface">
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <h2 className="text-sm font-semibold">Задачи по ученику</h2>
+        <Button size="sm" variant="outline" asChild>
+          <Link href={`/tasks?create=1&client=${clientId}`}>Новая задача</Link>
+        </Button>
+      </div>
+      {tasks.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-text-secondary">Задач нет.</p>
+      ) : (
+        <ul className="divide-y text-sm">
+          {tasks.map((t) => (
+            <li key={t.id} className="flex items-center gap-3 px-4 py-2.5">
+              <Link href={`/tasks?client=${clientId}&task=${t.id}`} className={cn("flex-1 hover:underline", t.status === "DONE" && "text-text-secondary line-through")}>
+                {t.title}
+              </Link>
+              <span className="text-text-secondary">{t.assignee?.name}</span>
+              <StatusBadge tone={TASK_STATUS[t.display].tone}>{TASK_STATUS[t.display].label}</StatusBadge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -36,7 +36,7 @@ export function ClientsTable({
   const params = useSearchParams();
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(params.get("create") === "1");
   const [pending, startTransition] = useTransition();
 
   const set = (k: string, v: string | null) => {

@@ -10,7 +10,6 @@ import {
   LogOut,
   Menu,
   Plus,
-  Search,
   Settings,
   UserPlus,
   UserRoundPlus,
@@ -26,19 +25,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { can, ROLE_LABEL, type Permission, type Role } from "@/lib/access";
 import { logout } from "@/app/login/actions";
+import { GlobalSearch } from "./global-search";
 import { Logo } from "./logo";
 import { NavLinks, type NavItem } from "./sidebar";
 
 const CREATE_ITEMS: { label: string; icon: LucideIcon; permission: Permission; stage: number; href?: string }[] = [
   { label: "Урок", icon: CalendarPlus, permission: "lessons.create", stage: 2, href: "/lessons?create=1" },
-  { label: "Клиент", icon: UserRoundPlus, permission: "clients.create", stage: 3 },
-  { label: "Платёж", icon: Banknote, permission: "finance.payments", stage: 3 },
-  { label: "Задача", icon: ClipboardPlus, permission: "tasks.create", stage: 5 },
-  { label: "Лид", icon: UserPlus, permission: "leads.create", stage: 5 },
+  { label: "Клиент", icon: UserRoundPlus, permission: "clients.create", stage: 3, href: "/clients?create=1" },
+  { label: "Платёж", icon: Banknote, permission: "finance.payments", stage: 3, href: "/finance?tab=payments&pay=1" },
+  { label: "Задача", icon: ClipboardPlus, permission: "tasks.create", stage: 5, href: "/tasks?create=1" },
+  { label: "Лид", icon: UserPlus, permission: "leads.create", stage: 5, href: "/leads?create=1" },
 ];
 
 function initials(name: string) {
@@ -72,17 +71,7 @@ export function Topbar({ user, nav }: { user: { name: string; email: string; rol
         </SheetContent>
       </Sheet>
 
-      <form
-        className="relative max-w-md flex-1"
-        role="search"
-        onSubmit={(e) => {
-          e.preventDefault();
-          toast.info("Поиск по клиентам и лидам появится на этапе 3");
-        }}
-      >
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-text-secondary" />
-        <Input name="q" placeholder="Поиск по клиентам и лидам" className="h-9 bg-subtle pl-9" aria-label="Поиск" />
-      </form>
+      <GlobalSearch />
 
       <div className="ml-auto flex items-center gap-2">
         {createItems.length > 0 && (

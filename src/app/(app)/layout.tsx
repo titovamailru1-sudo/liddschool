@@ -2,12 +2,16 @@ import { cookies } from "next/headers";
 import { Sidebar, SIDEBAR_COOKIE } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { navFor } from "@/lib/access";
+import { now } from "@/server/clock";
+import { prisma } from "@/server/db";
 import { requireUser } from "@/server/session";
+import { overdueCount } from "@/server/tasks/service";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1";
-  const nav = navFor(user.role).map(({ key, href, label }) => ({ key, href, label }));
+  const overdue = await overdueCount(prisma, user.id, now());
+  const nav = navFor(user.role).map(({ key, href, label }) => ({ key, href, label, badge: key === "tasks" ? overdue : undefined }));
 
   return (
     <div className="flex min-h-screen bg-canvas">

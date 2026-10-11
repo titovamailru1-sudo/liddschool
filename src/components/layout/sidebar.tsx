@@ -15,6 +15,7 @@ export interface NavItem {
   key: NavKey;
   href: string;
   label: string;
+  badge?: number; // просроченные задачи у «Задач»
 }
 
 export const SIDEBAR_COOKIE = "sidebar_collapsed";
@@ -47,8 +48,16 @@ export function NavLinks({
               collapsed && "justify-center px-0",
             )}
           >
-            <Icon className="size-[18px] shrink-0" />
+            <span className="relative">
+              <Icon className="size-[18px] shrink-0" />
+              {collapsed && !!item.badge && <span className="absolute -top-1 -right-1 size-2 rounded-full bg-danger" />}
+            </span>
             {!collapsed && <span className="truncate">{item.label}</span>}
+            {!collapsed && !!item.badge && (
+              <span className="ml-auto rounded-full bg-danger px-1.5 text-[11px] leading-5 font-semibold text-white tabular-nums" aria-label={`просрочено: ${item.badge}`}>
+                {item.badge}
+              </span>
+            )}
           </Link>
         );
         if (!collapsed) return link;

@@ -10,6 +10,10 @@ import { cancelLesson, settle } from "../src/server/lessons/service";
 import { buildInvoiceDraft, issueInvoice } from "../src/server/billing/invoices";
 import { acceptPayment } from "../src/server/billing/payments";
 import { addPayrollAdjustment, addPayrollPayment } from "../src/server/payroll/payroll";
+import { addExpense } from "../src/server/expenses";
+import { addLeadTouch, createLead, scheduleTrial, setLeadStage } from "../src/server/leads/service";
+import { createTask } from "../src/server/tasks/service";
+import { addDays } from "../src/domain/calendar";
 
 const prisma = new PrismaClient();
 
@@ -144,6 +148,7 @@ const GROUPS = [
 async function wipe() {
   // Порядок важен из-за внешних ключей.
   await prisma.auditLog.deleteMany();
+  await prisma.taskComment.deleteMany();
   await prisma.jobRun.deleteMany();
   await prisma.message.deleteMany();
   await prisma.telegramInvite.deleteMany();
@@ -445,6 +450,66 @@ async function main() {
     { amount: 3000, paidAt: new Date(), isAdvance: true, comment: "Аванс" },
     localDateOf(new Date()),
   );
+
+  // ── Лиды на разных этапах воронки ──
+  const today = localDateOf(new Date());
+  const LEADS: { child: string; parent: string; phone: string; source: "SITE" | "AVITO" | "VK" | "REFERRAL" | "OTHER"; subject: string; program: "EXAM" | "SCHOOL"; grade: number; stage: string; touch?: string; lost?: string }[] = [
+    { child: "Зайцева Даша", parent: "Зайцева Мария Ивановна", phone: "+7 914 600-00-01", source: "AVITO", subject: "математика", program: "EXAM", grade: 9, stage: "NEW" },
+    { child: "Ершов Глеб", parent: "Ершова Анна Олеговна", phone: "+7 914 600-00-02", source: "SITE", subject: "информатика", program: "EXAM", grade: 11, stage: "NEW" },
+    { child: "Титова Лиза", parent: "Титов Павел Сергеевич", phone: "+7 914 600-00-03", source: "VK", subject: "математика", program: "SCHOOL", grade: 6, stage: "CONTACTED", touch: "Позвонили, хотят занятия после школы" },
+    { child: "Белов Кирилл", parent: "Белова Ольга Андреевна", phone: "+7 914 600-00-04", source: "REFERRAL", subject: "математика", program: "EXAM", grade: 9, stage: "CONTACTED", touch: "Посоветовали знакомые, ждут расписание" },
+    { child: "Макаров Иван", parent: "Макарова Светлана Ильинична", phone: "+7 914 600-00-05", source: "AVITO", subject: "информатика", program: "EXAM", grade: 10, stage: "TRIAL" },
+    { child: "Гусева Аня", parent: "Гусев Дмитрий Петрович", phone: "+7 914 600-00-06", source: "SITE", subject: "математика", program: "EXAM", grade: 11, stage: "TRIAL_DONE", touch: "Пробный прошёл хорошо, думают" },
+    { child: "Попов Саша", parent: "Попова Наталья Викторовна", phone: "+7 914 600-00-07", source: "VK", subject: "Python", program: "SCHOOL", grade: 7, stage: "LOST", lost: "Не подошло время" },
+    { child: "Орлова Вика", parent: "Орлова Елена Сергеевна", phone: "+7 914 600-00-08", source: "AVITO", subject: "математика", program: "SCHOOL", grade: 8, stage: "LOST", lost: "Дорого" },
+    { child: "Лебедев Миша", parent: "Лебедева Ирина Павловна", phone: "+7 914 600-00-09", source: "REFERRAL", subject: "информатика", program: "EXAM", grade: 9, stage: "CONTACTED", touch: "Перезвонить в выходные" },
+    { child: "Соколов Тимур", parent: "Соколов Артём Игоревич", phone: "+7 914 600-00-10", source: "OTHER", subject: "математика", program: "EXAM", grade: 11, stage: "NEW" },
+  ];
+  for (const [i, l] of LEADS.entries()) {
+    const lead = await createLead(prisma, admin.id, {
+      childName: l.child,
+      parentName: l.parent,
+      phone: l.phone,
+      source: l.source,
+      subject: l.subject,
+      program: l.program,
+      grade: l.grade,
+      ownerId: i % 3 === 0 ? owner.id : admin.id,
+    });
+    if (l.touch) await addLeadTouch(prisma, admin.id, lead.id, "call", l.touch);
+    if (l.stage === "TRIAL" || l.stage === "TRIAL_DONE") {
+      await addLeadTouch(prisma, admin.id, lead.id, "call", "Записали на пробный");
+      await scheduleTrial(prisma, admin.id, lead.id, {
+        teacherId: l.subject === "информатика" ? teacherId.orlov : teacherId.solovyova,
+        date: addDays(today, l.stage === "TRIAL" ? 1 : -1),
+        time: "12:00",
+        durationMin: 60,
+        subject: l.subject,
+      });
+      if (l.stage === "TRIAL_DONE") await setLeadStage(prisma, admin.id, lead.id, "TRIAL_DONE");
+    }
+    if (l.lost) await setLeadStage(prisma, admin.id, lead.id, "LOST", l.lost);
+    // Часть заявок «старые» — без касания больше 2 дней.
+    if (l.stage === "NEW" && i === 0) {
+      await prisma.lead.update({ where: { id: lead.id }, data: { createdAt: new Date(Date.now() - 4 * 86_400_000) } });
+    }
+  }
+
+  // ── Задачи вручную ──
+  const adminUser = { id: admin.id, name: admin.name, email: admin.email, role: "ADMIN" as const, teacherId: null };
+  await createTask(prisma, adminUser, {
+    title: "Позвонить маме Козлова Саши насчёт долга",
+    assigneeId: admin.id,
+    clientId: clientId["Козлов Саша"],
+    dueAt: new Date(Date.now() - 86_400_000),
+    priority: "HIGH",
+  });
+  await createTask(prisma, adminUser, { title: "Подготовить пробный вариант ОГЭ для группы", assigneeId: admin.id, dueAt: new Date(Date.now() + 3 * 86_400_000) });
+
+  // ── Расходы текущего месяца ──
+  await addExpense(prisma, owner.id, { category: "Аренда", amount: 25000, date: SERIES_FROM, comment: "Офис" });
+  await addExpense(prisma, owner.id, { category: "Реклама", amount: 8000, date: addDays(SERIES_FROM, 2), comment: "Авито" });
+  await addExpense(prisma, owner.id, { category: "Связь и сервисы", amount: 1900, date: addDays(SERIES_FROM, 4), comment: "Телемост, телефония" });
 
   await prisma.auditLog.create({
     data: { entity: "System", entityId: "seed", action: "seed", userId: owner.id },

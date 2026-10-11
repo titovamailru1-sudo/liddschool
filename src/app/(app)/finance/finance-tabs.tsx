@@ -36,7 +36,7 @@ export function PaymentsTab({
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(params.get("pay") === "1");
   const set = (k: string, v: string | null) => {
     const next = new URLSearchParams(params.toString());
     if (v) next.set(k, v);
