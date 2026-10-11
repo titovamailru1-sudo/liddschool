@@ -1,100 +1,101 @@
-import { CalendarDays, MapPin, Video } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
-import { StatusBadge } from "@/components/status-badge";
-import { localDateOf, zonedInstant } from "@/domain/calendar";
-import { formatLocalDate, formatTime } from "@/domain/format";
-import { LESSON_STATUS, lessonDisplayStatus } from "@/lib/status";
+import { localDateOf, parseLocalDate, viewRange, type CalendarView } from "@/domain/calendar";
+import { formatRub } from "@/domain/format";
+import { can } from "@/lib/access";
+import { LESSON_STATUS, type LessonDisplayStatus } from "@/lib/status";
 import { now } from "@/server/clock";
 import { prisma } from "@/server/db";
+import { ensureLessons } from "@/server/lessons/generation";
+import { calendarLessons, daySummary, lessonDetail, lessonFormOptions } from "@/server/lessons/queries";
 import { requirePermission } from "@/server/session";
+import { LessonsView } from "./_components/lessons-view";
 
 export const metadata = { title: "Уроки" };
 
-const WEEKDAY_LONG = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
+const VIEWS: CalendarView[] = ["day", "week", "month", "list"];
 
-export default async function LessonsPage() {
+type Search = Record<string, string | string[] | undefined>;
+const str = (v: string | string[] | undefined) => (typeof v === "string" && v ? v : undefined);
+
+function validDate(v: string | undefined, fallback: string) {
+  if (!v) return fallback;
+  try {
+    parseLocalDate(v);
+    return v;
+  } catch {
+    return fallback;
+  }
+}
+
+export default async function LessonsPage({ searchParams }: { searchParams: Promise<Search> }) {
   const user = await requirePermission("lessons.view");
-
+  const sp = await searchParams;
   const at = now();
   const today = localDateOf(at);
-  const from = zonedInstant(today, "00:00");
-  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000); // во Владивостоке нет перехода на летнее время
 
-  // Педагог видит только свои уроки — фильтр на сервере, а не в интерфейсе.
-  const lessons = await prisma.lesson.findMany({
-    where: {
-      startsAt: { gte: from, lt: to },
-      ...(user.role === "TEACHER" ? { teacherId: user.teacherId ?? "—" } : {}),
-    },
-    orderBy: { startsAt: "asc" },
-    include: {
-      teacher: { select: { fullName: true, color: true } },
-      client: { select: { fullName: true } },
-      group: { select: { name: true } },
-      room: { select: { name: true } },
-    },
-  });
+  const view = VIEWS.includes(sp.view as CalendarView) ? (sp.view as CalendarView) : "day";
+  const date = validDate(str(sp.date), today);
+  const range = viewRange(view, date);
+  const status = str(sp.status);
+  const filters = {
+    teacher: str(sp.teacher),
+    subject: str(sp.subject),
+    client: str(sp.client),
+    group: str(sp.group),
+    status: status && status in LESSON_STATUS ? status : undefined,
+  };
 
-  const unmarked = lessons.filter(
-    (l) => l.status === "PLANNED" && l.startsAt.getTime() + l.durationMin * 60_000 < at.getTime(),
-  ).length;
-  const weekday = WEEKDAY_LONG[(new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7];
+  // Уроки бессрочных серий за горизонтом генерации досоздаются при первом просмотре периода.
+  await ensureLessons(prisma, range.from, range.to);
+
+  const lessonId = str(sp.lesson);
+  const [lessons, summary, options, detail] = await Promise.all([
+    calendarLessons(user, range.from, range.to, {
+      teacherId: filters.teacher,
+      subject: filters.subject,
+      clientId: filters.client,
+      groupId: filters.group,
+      status: filters.status as LessonDisplayStatus | undefined,
+    }),
+    daySummary(user, today, at),
+    lessonFormOptions(user),
+    lessonId ? lessonDetail(user, lessonId) : Promise.resolve(null),
+  ]);
 
   return (
     <>
-      <PageHeader title="Уроки" description={`${weekday}, ${formatLocalDate(today)}`} />
-
-      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 rounded-lg border bg-surface px-4 py-3 text-sm">
+      <PageHeader title="Уроки" />
+      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 rounded-lg border bg-surface px-4 py-2.5 text-sm">
         <span>
-          Уроков сегодня: <b>{lessons.length}</b>
+          Уроков сегодня: <b>{summary.total}</b>
         </span>
         <span>
-          Неотмеченных прошедших: <b className={unmarked ? "text-danger" : undefined}>{unmarked}</b>
+          Неотмеченных прошедших: <b className={summary.unmarked ? "text-danger" : undefined}>{summary.unmarked}</b>
         </span>
-        <span className="text-text-secondary">Календарь (день, неделя, месяц) — этап 2</span>
+        {summary.revenue !== null && (
+          <span>
+            Выручка за день: <b>{formatRub(summary.revenue)}</b>
+          </span>
+        )}
       </div>
-
-      {lessons.length === 0 ? (
-        <EmptyState
-          icon={CalendarDays}
-          title="На сегодня уроков нет"
-          hint={
-            user.role === "TEACHER"
-              ? "Когда администратор поставит вам урок, он появится здесь."
-              : "Создайте урок или серию занятий через «+ Создать» — расписание появится на этапе 2."
-          }
-        />
-      ) : (
-        <ul className="space-y-2">
-          {lessons.map((l) => {
-            const status = LESSON_STATUS[lessonDisplayStatus(l.status)];
-            return (
-              <li
-                key={l.id}
-                className="flex items-center gap-4 rounded-lg border bg-surface px-4 py-3"
-                style={{ borderLeft: `4px solid ${l.teacher.color}` }}
-              >
-                <div className="w-14 shrink-0 text-sm font-semibold tabular-nums">{formatTime(l.startsAt)}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{l.client?.fullName ?? `Группа ${l.group?.name}`}</div>
-                  <div className="flex flex-wrap items-center gap-x-3 text-sm text-text-secondary">
-                    <span>
-                      {l.subject} · {l.durationMin} мин
-                    </span>
-                    {user.role !== "TEACHER" && <span>{l.teacher.fullName}</span>}
-                    <span className="inline-flex items-center gap-1">
-                      {l.format === "ONLINE" ? <Video className="size-3.5" /> : <MapPin className="size-3.5" />}
-                      {l.format === "ONLINE" ? "Онлайн" : l.room?.name}
-                    </span>
-                  </div>
-                </div>
-                <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <LessonsView
+        view={view}
+        date={date}
+        range={range}
+        today={today}
+        nowIso={at.toISOString()}
+        lessons={lessons}
+        detail={detail}
+        options={options}
+        role={user.role}
+        perms={{
+          canCreate: can(user.role, "lessons.create"),
+          canMark: can(user.role, "lessons.mark"),
+          canManage: can(user.role, "lessons.manage"),
+        }}
+        filters={filters}
+        createOpen={sp.create === "1"}
+      />
     </>
   );
 }

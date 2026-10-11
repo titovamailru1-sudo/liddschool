@@ -139,18 +139,11 @@ async function resolveTarget(db: Db, input: Pick<CreateLessonInput, "clientId" |
   return { teacher, program: group.program, clientIds: group.members.map((m) => m.clientId) };
 }
 
-/** Создать разовый урок или регулярное расписание (по серии на каждый день недели). */
-export async function createLessons(
-  db: RootDb,
-  actor: Actor,
-  input: CreateLessonInput,
-  today: LocalDate,
-): Promise<ScheduleResult<{ lessonIds: string[]; seriesIds: string[] }>> {
+/** Уроки, которые появятся после создания: разовый или все уроки серий до конца срока / горизонта. */
+async function planCreate(db: Db, input: CreateLessonInput, today: LocalDate) {
   lessonHours(input.durationMin); // проверка длительности
   const target = await resolveTarget(db, input);
   const onlineUrl = input.onlineUrl?.trim() || target.teacher.onlineUrl;
-
-  // Кандидаты: разовый урок или все уроки серий до конца срока / горизонта генерации.
   const repeat = input.repeat;
   const candidates: BusySlot[] = [];
   if (repeat.kind === "once") {
@@ -176,6 +169,24 @@ export async function createLessons(
     }
     if (!candidates.length) throw new DomainError("В выбранный период нет ни одного урока");
   }
+  return { target, onlineUrl, candidates };
+}
+
+/** Предпросмотр для формы: сколько уроков будет создано и с чем они пересекаются. */
+export async function previewCreate(db: Db, input: CreateLessonInput, today: LocalDate) {
+  const { candidates } = await planCreate(db, input, today);
+  return { count: candidates.length, conflicts: await checkConflicts(db, candidates) };
+}
+
+/** Создать разовый урок или регулярное расписание (по серии на каждый день недели). */
+export async function createLessons(
+  db: RootDb,
+  actor: Actor,
+  input: CreateLessonInput,
+  today: LocalDate,
+): Promise<ScheduleResult<{ lessonIds: string[]; seriesIds: string[] }>> {
+  const { target, onlineUrl, candidates } = await planCreate(db, input, today);
+  const repeat = input.repeat;
 
   const conflicts = await checkConflicts(db, candidates);
   const stop = gate(conflicts, !!input.force);

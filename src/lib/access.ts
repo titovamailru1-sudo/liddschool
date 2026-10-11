@@ -18,6 +18,9 @@ const OWNER: readonly Role[] = ["OWNER"];
 export const PERMISSIONS = {
   "lessons.view": ALL, // педагог — только свои уроки
   "lessons.create": STAFF,
+  "lessons.manage": STAFF, // перенос, отмена, расписание учеников
+  "lessons.mark": ALL, // педагог — только свои уроки
+  "lessons.finance": OWNER, // блок «Финансы урока», выручка дня
   "tasks.view": ALL, // педагог — только свои задачи
   "tasks.create": ALL,
   "clients.view": ALL, // педагог — только своих учеников

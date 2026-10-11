@@ -33,8 +33,8 @@ import { logout } from "@/app/login/actions";
 import { Logo } from "./logo";
 import { NavLinks, type NavItem } from "./sidebar";
 
-const CREATE_ITEMS: { label: string; icon: LucideIcon; permission: Permission; stage: number }[] = [
-  { label: "Урок", icon: CalendarPlus, permission: "lessons.create", stage: 2 },
+const CREATE_ITEMS: { label: string; icon: LucideIcon; permission: Permission; stage: number; href?: string }[] = [
+  { label: "Урок", icon: CalendarPlus, permission: "lessons.create", stage: 2, href: "/lessons?create=1" },
   { label: "Клиент", icon: UserRoundPlus, permission: "clients.create", stage: 3 },
   { label: "Платёж", icon: Banknote, permission: "finance.payments", stage: 3 },
   { label: "Задача", icon: ClipboardPlus, permission: "tasks.create", stage: 5 },
@@ -94,15 +94,24 @@ export function Topbar({ user, nav }: { user: { name: string; email: string; rol
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              {createItems.map((item) => (
-                <DropdownMenuItem
-                  key={item.label}
-                  onSelect={() => toast.info(`Создание: «${item.label}» — появится на этапе ${item.stage}`)}
-                >
-                  <item.icon />
-                  {item.label}
-                </DropdownMenuItem>
-              ))}
+              {createItems.map((item) =>
+                item.href ? (
+                  <DropdownMenuItem key={item.label} asChild>
+                    <Link href={item.href}>
+                      <item.icon />
+                      {item.label}
+                    </Link>
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    key={item.label}
+                    onSelect={() => toast.info(`Создание: «${item.label}» — появится на этапе ${item.stage}`)}
+                  >
+                    <item.icon />
+                    {item.label}
+                  </DropdownMenuItem>
+                ),
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

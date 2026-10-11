@@ -1,7 +1,7 @@
 import type { StatusTone } from "@/components/status-badge";
+import type { LessonDisplayStatus } from "@/domain/lessonSettlement";
 
-/** Статус урока для отображения: учитывает посещаемость индивидуального урока. */
-export type LessonDisplayStatus = "planned" | "done" | "cancelled" | "excused" | "unexcused" | "moved";
+export type { LessonDisplayStatus };
 
 export const LESSON_STATUS: Record<LessonDisplayStatus, { label: string; tone: StatusTone }> = {
   planned: { label: "Запланирован", tone: "planned" },
@@ -25,7 +25,5 @@ export const TASK_STATUS = {
   done: { label: "Выполнена", tone: "done" },
 } as const satisfies Record<string, { label: string; tone: StatusTone }>;
 
-/** Статус урока из БД → вариант отображения (посещаемость учитывается на этапе 2). */
-export function lessonDisplayStatus(status: "PLANNED" | "DONE" | "CANCELLED" | "MOVED"): LessonDisplayStatus {
-  return ({ PLANNED: "planned", DONE: "done", CANCELLED: "cancelled", MOVED: "moved" } as const)[status];
-}
+export const PAYMENT_MODE_LABEL = { MONTHLY: "Абонемент", PER_LESSON: "Поурочно" } as const;
+export const PROGRAM_LABEL = { EXAM: "ОГЭ / ЕГЭ", SCHOOL: "Школьная программа" } as const;

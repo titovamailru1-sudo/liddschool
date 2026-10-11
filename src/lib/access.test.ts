@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAccessPath, financeTabsFor, navFor } from "./access";
+import { can, canAccessPath, financeTabsFor, navFor } from "./access";
 
 const labels = (role: Parameters<typeof navFor>[0]) => navFor(role).map((n) => n.label);
 
@@ -48,4 +48,15 @@ describe("доступ к путям", () => {
     ["TEACHER", "/forbidden", true],
     ["TEACHER", "/leadsX", true], // не префикс раздела
   ] as const)("%s → %s: %s", (role, path, ok) => expect(canAccessPath(role, path)).toBe(ok));
+});
+
+describe("права на уроки", () => {
+  it.each([
+    ["TEACHER", "lessons.mark", true],
+    ["TEACHER", "lessons.create", false],
+    ["TEACHER", "lessons.manage", false],
+    ["ADMIN", "lessons.manage", true],
+    ["ADMIN", "lessons.finance", false],
+    ["OWNER", "lessons.finance", true],
+  ] as const)("%s %s → %s", (role, perm, ok) => expect(can(role, perm)).toBe(ok));
 });

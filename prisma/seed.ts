@@ -6,6 +6,7 @@ import { PrismaClient, type Gender, type PaymentMode, type Prisma, type Program 
 import bcrypt from "bcryptjs";
 import { firstOfMonth, fromDbDate, localDateOf, nextMonth, parseLocalDate, toDbDate } from "../src/domain/calendar";
 import { occurrencesInMonth, type SeriesInput } from "../src/domain/schedule";
+import { cancelLesson, settle } from "../src/server/lessons/service";
 
 const prisma = new PrismaClient();
 
@@ -22,12 +23,12 @@ const TEACHERS = [
 ] as const;
 type TeacherKey = (typeof TEACHERS)[number]["key"];
 
-const ROOMS = ["Каб. 1", "Каб. 2", "Каб. 3", "Каб. 4"] as const;
-const ROOM_OF: Record<TeacherKey, (typeof ROOMS)[number]> = {
-  petrova: "Каб. 1",
-  solovyova: "Каб. 2",
-  orlov: "Каб. 3",
-  kim: "Каб. 4",
+// Все занятия онлайн: у каждого педагога постоянная ссылка (демо-адреса).
+const ONLINE_URL: Record<TeacherKey, string> = {
+  petrova: "https://telemost.yandex.ru/j/lidd-petrova",
+  kim: "https://telemost.yandex.ru/j/lidd-kim",
+  solovyova: "https://telemost.yandex.ru/j/lidd-solovyova",
+  orlov: "https://telemost.yandex.ru/j/lidd-orlov",
 };
 
 interface SlotSeed {
@@ -45,7 +46,6 @@ interface ClientSeed {
   subject: string;
   teacher: TeacherKey;
   slots: SlotSeed[];
-  online?: boolean;
   startsOn?: string;
   parent: { fullName: string; relation: string; phone: string };
   goal?: string;
@@ -81,7 +81,7 @@ const CLIENTS: ClientSeed[] = [
   },
   {
     fullName: "Морозов Артём", gender: "MALE", grade: 11, program: "EXAM", paymentMode: "MONTHLY",
-    subject: "информатика", teacher: "orlov", online: true,
+    subject: "информатика", teacher: "orlov",
     slots: [{ weekday: 1, time: "17:00", min: 90 }, { weekday: 4, time: "17:00", min: 90 }],
     parent: { fullName: "Морозова Татьяна Олеговна", relation: "мама", phone: "+7 914 555-01-05" },
     goal: "ЕГЭ информатика, 90+",
@@ -196,16 +196,13 @@ async function main() {
         fullName: t.fullName,
         phone: t.phone,
         color: t.color,
+        onlineUrl: ONLINE_URL[t.key],
         subjects: [...t.subjects],
         userId: t.key === "kim" ? kimUser.id : undefined,
       },
     });
     teacherId[t.key] = created.id;
   }
-
-  // ── Кабинеты ──
-  const roomId = {} as Record<string, string>;
-  for (const name of ROOMS) roomId[name] = (await prisma.room.create({ data: { name } })).id;
 
   // ── Тарифы (₽ за урок-час) ──
   const tariffs: Omit<Prisma.TariffCreateManyInput, "validFrom">[] = [
@@ -273,9 +270,9 @@ async function main() {
           weekday: slot.weekday,
           startTime: slot.time,
           durationMin: slot.min,
-          format: c.online ? "ONLINE" : "OFFLINE",
-          roomId: c.online ? null : roomId[ROOM_OF[c.teacher]],
-          onlineUrl: c.online ? "https://telemost.yandex.ru/j/lidd-demo" : null,
+          format: "ONLINE",
+          onlineUrl: ONLINE_URL[c.teacher],
+          createdById: admin.id,
           startsOn: toDbDate(c.startsOn ?? SERIES_FROM),
         },
       });
@@ -315,7 +312,9 @@ async function main() {
         weekday: g.slot.weekday,
         startTime: g.slot.time,
         durationMin: g.slot.min,
-        roomId: roomId[ROOM_OF[g.teacher]],
+        format: "ONLINE",
+        onlineUrl: ONLINE_URL[g.teacher],
+        createdById: admin.id,
         startsOn: toDbDate(SERIES_FROM),
       },
     });
@@ -350,12 +349,36 @@ async function main() {
           startsAt: o.startsAt,
           durationMin: o.durationMin,
           format: s.format,
-          roomId: s.roomId,
           onlineUrl: s.onlineUrl,
+          createdById: s.createdById,
         };
       }),
     });
     lessonsCount += occ.length;
+  }
+
+  // ── Прошедшие уроки: отмечаем через тот же сервис, что и интерфейс ──
+  // Последние двое суток оставляем неотмеченными — чтобы было что отметить при проверке.
+  const markBefore = new Date(Date.now() - 2 * 24 * 3_600_000);
+  const past = await prisma.lesson.findMany({
+    where: { startsAt: { lt: markBefore } },
+    orderBy: { startsAt: "asc" },
+    select: { id: true, clientId: true, groupId: true },
+  });
+  const actor = { userId: admin.id };
+  for (const [i, l] of past.entries()) {
+    if (l.clientId) {
+      if (i % 17 === 5) await cancelLesson(prisma, actor, l.id, { by: "SCHOOL", reason: "Педагог на больничном" });
+      else if (i % 19 === 7) await cancelLesson(prisma, actor, l.id, { by: "CLIENT", excused: true, reason: "Предупредили заранее" });
+      else if (i % 23 === 11) await settle(prisma, actor, l.id, { kind: "DONE", attendance: { [l.clientId]: "ABSENT_UNEXCUSED" } });
+      else await settle(prisma, actor, l.id, { kind: "DONE", attendance: { [l.clientId]: "PRESENT" } });
+    } else if (l.groupId) {
+      const members = await prisma.groupMember.findMany({ where: { groupId: l.groupId }, select: { clientId: true } });
+      const attendance = Object.fromEntries(
+        members.map((m, j) => [m.clientId, (i + j) % 7 === 0 ? ("ABSENT_EXCUSED" as const) : ("PRESENT" as const)]),
+      );
+      await settle(prisma, actor, l.id, { kind: "DONE", attendance });
+    }
   }
 
   // ── Настройки ──
