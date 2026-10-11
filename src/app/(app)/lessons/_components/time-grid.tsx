@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { localDateOf } from "@/domain/calendar";
 import { formatTime } from "@/domain/format";
 import { layoutLanes } from "@/lib/calendar-layout";
@@ -43,14 +44,38 @@ export function TimeGrid({
   showTeacher?: boolean;
   nowIso: string;
 }) {
-  // Диапазон часов расширяется, если есть уроки раньше 8:00 или позже 22:00.
+  // Текущее время: с сервера при загрузке, дальше обновляется каждые 30 секунд.
+  const [now, setNow] = useState(nowIso);
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date().toISOString()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const today = localDateOf(new Date(now));
+  const nowMin = minutesOf(now);
+  const todayInView = columns.some((c) => c.date === today);
+
+  // Диапазон часов расширяется, если есть уроки раньше 8:00 или позже 22:00, и чтобы было видно текущее время.
   const all = columns.flatMap((c) => c.lessons);
-  const fromHour = Math.min(DEFAULT_FROM, ...all.map((l) => Math.floor(minutesOf(l.startsAt) / 60)));
-  const toHour = Math.max(DEFAULT_TO, ...all.map((l) => Math.ceil((minutesOf(l.startsAt) + l.durationMin) / 60)));
+  const fromHour = Math.min(
+    DEFAULT_FROM,
+    ...all.map((l) => Math.floor(minutesOf(l.startsAt) / 60)),
+    ...(todayInView ? [Math.floor(nowMin / 60)] : []),
+  );
+  const toHour = Math.max(
+    DEFAULT_TO,
+    ...all.map((l) => Math.ceil((minutesOf(l.startsAt) + l.durationMin) / 60)),
+    ...(todayInView ? [Math.min(24, Math.floor(nowMin / 60) + 1)] : []),
+  );
   const hours = Array.from({ length: toHour - fromHour }, (_, i) => fromHour + i);
   const height = hours.length * HOUR_PX;
-  const today = localDateOf(new Date(nowIso));
-  const nowMin = minutesOf(nowIso);
+  const showNow = todayInView;
+  const nowTop = ((nowMin - fromHour * 60) / 60) * HOUR_PX;
+
+  // При открытии — прокрутить страницу к текущему часу (один раз).
+  const nowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    nowRef.current?.scrollIntoView({ block: "center" });
+  }, []);
 
   return (
     <div className="overflow-x-auto rounded-lg border bg-surface">
@@ -69,6 +94,16 @@ export function TimeGrid({
         </div>
 
         <div className="relative flex" style={{ height }}>
+          {/* Красная линия текущего времени через весь календарь */}
+          {showNow && (
+            <div ref={nowRef} className="pointer-events-none absolute inset-x-0 z-[6]" style={{ top: nowTop }} aria-label={`Сейчас ${formatTime(new Date(now))}`}>
+              <div className="absolute left-14 right-0 border-t border-danger/60" />
+              <span className="absolute left-0 w-14 -translate-y-1/2 pr-1.5 text-right text-[11px] font-semibold text-danger tabular-nums">
+                {formatTime(new Date(now))}
+              </span>
+              <span className="absolute left-14 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-danger" />
+            </div>
+          )}
           {/* Шкала времени */}
           <div className="w-14 shrink-0">
             {hours.map((h) => (
@@ -100,8 +135,8 @@ export function TimeGrid({
                 {hours.map((h) => (
                   <div key={h} className="border-b border-dashed border-border/70" style={{ height: HOUR_PX }} />
                 ))}
-                {c.date === today && nowMin >= fromHour * 60 && nowMin <= toHour * 60 && (
-                  <div className="pointer-events-none absolute inset-x-0 z-[5] border-t-2 border-danger" style={{ top: ((nowMin - fromHour * 60) / 60) * HOUR_PX }} />
+                {showNow && c.date === today && (
+                  <div className="pointer-events-none absolute inset-x-0 z-[6] -translate-y-px border-t-2 border-danger" style={{ top: nowTop }} />
                 )}
                 {laid.map(({ item, lane, lanes }) => {
                   const top = ((minutesOf(item.startsAt) - fromHour * 60) / 60) * HOUR_PX;
