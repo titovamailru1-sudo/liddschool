@@ -9,6 +9,7 @@ import { occurrencesInMonth, type SeriesInput } from "../src/domain/schedule";
 import { cancelLesson, settle } from "../src/server/lessons/service";
 import { buildInvoiceDraft, issueInvoice } from "../src/server/billing/invoices";
 import { acceptPayment } from "../src/server/billing/payments";
+import { addPayrollAdjustment, addPayrollPayment } from "../src/server/payroll/payroll";
 
 const prisma = new PrismaClient();
 
@@ -246,6 +247,8 @@ async function main() {
       },
     },
   });
+  // Первая версия шаблона: изменения создают новые версии с 1-го числа месяца.
+  await prisma.ratePlan.update({ where: { id: plan.id }, data: { familyId: plan.id, versionFrom: toDbDate(TARIFFS_FROM) } });
   await prisma.teacherRatePlan.createMany({
     data: TEACHERS.map((t) => ({ teacherId: teacherId[t.key], planId: plan.id, validFrom: toDbDate(TARIFFS_FROM) })),
   });
@@ -430,6 +433,18 @@ async function main() {
   // Поурочники: Алиса внесла предоплату, Егор частично погасил долг.
   await acceptPayment(prisma, admin.id, { clientId: clientId["Соколова Алиса"], amount: 6000, method: "TRANSFER", comment: "Предоплата за несколько уроков" });
   await acceptPayment(prisma, admin.id, { clientId: clientId["Фёдоров Егор"], amount: 3400, method: "CASH" });
+
+  // ── Зарплаты: премия Киму и аванс Петровой в текущем месяце ──
+  await addPayrollAdjustment(prisma, owner.id, teacherId.kim, TODAY.year, TODAY.month, 1500, "Подготовка к олимпиаде по информатике");
+  await addPayrollPayment(
+    prisma,
+    owner.id,
+    teacherId.petrova,
+    TODAY.year,
+    TODAY.month,
+    { amount: 3000, paidAt: new Date(), isAdvance: true, comment: "Аванс" },
+    localDateOf(new Date()),
+  );
 
   await prisma.auditLog.create({
     data: { entity: "System", entityId: "seed", action: "seed", userId: owner.id },

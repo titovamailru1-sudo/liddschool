@@ -28,6 +28,8 @@ export const PERMISSIONS = {
   "clients.edit": STAFF, // карточка, родители, архив, приглашение в Telegram
   "groups.view": ALL, // педагог — только свои группы
   "teachers.view": STAFF,
+  "teachers.create": STAFF, // администратор тоже добавляет педагогов (без доступа к ставкам)
+  "teachers.edit": STAFF,
   "teachers.rates": OWNER, // ставки, начисления, зарплаты
   "finance.view": ALL, // набор вкладок зависит от роли
   "finance.payments": STAFF, // платежи и долги, приём оплаты

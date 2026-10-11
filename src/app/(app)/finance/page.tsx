@@ -2,23 +2,36 @@ import Link from "next/link";
 import { ChartColumn, Receipt, Wallet, WalletCards, type LucideIcon } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
-import { addDays, firstOfMonth, localDateOf, parseLocalDate } from "@/domain/calendar";
+import { addDays, firstOfMonth, lastOfMonth, localDateOf, parseLocalDate } from "@/domain/calendar";
 import { financeTabsFor, type FinanceTab } from "@/lib/access";
 import { cn } from "@/lib/utils";
 import { debtors, paymentsJournal, staffList } from "@/server/billing/queries";
 import { now } from "@/server/clock";
 import { prisma } from "@/server/db";
 import { requirePermission } from "@/server/session";
+import { payrollSheet, teacherMonth } from "@/server/payroll/payroll";
 import { DebtsTab, PaymentsTab } from "./finance-tabs";
+import { MyEarningsView, PayrollSheetView } from "./payroll-views";
 
 export const metadata = { title: "Финансы" };
 
 const PLACEHOLDER: Partial<Record<FinanceTab, { icon: LucideIcon; title: string; hint: string }>> = {
   expenses: { icon: Receipt, title: "Расходов пока нет", hint: "Аренда, реклама, материалы — по статьям, этап 5." },
-  payroll: { icon: WalletCards, title: "Ведомость пуста", hint: "Начисления педагогам по проведённым урокам — этап 4." },
   reports: { icon: ChartColumn, title: "Отчётов пока нет", hint: "Выручка, зарплаты, расходы и прибыль — этап 5." },
-  my: { icon: Wallet, title: "Начислений пока нет", hint: "Здесь появится сумма за месяц и начисление по каждому уроку — этап 4." },
 };
+
+/** Месяц из адреса (?month=2026-10) или текущий; соседние — для навигации. */
+function monthParam(v: string | undefined, today: string) {
+  const { year, month } = parseLocalDate(today);
+  let y = year;
+  let m = month;
+  if (v && /^\d{4}-\d{2}$/.test(v)) {
+    const [yy, mm] = v.split("-").map(Number);
+    if (mm >= 1 && mm <= 12) [y, m] = [yy, mm];
+  }
+  const start = firstOfMonth(y, m);
+  return { year: y, month: m, key: start.slice(0, 7), prev: addDays(start, -1).slice(0, 7), next: addDays(lastOfMonth(y, m), 1).slice(0, 7) };
+}
 
 type Search = Record<string, string | undefined>;
 const isDate = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -49,6 +62,21 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
     body = <PaymentsTab journal={journal} filters={filters} staff={staff} clients={clients} today={today} />;
   } else if (active.key === "debts") {
     body = <DebtsTab rows={await debtors()} today={today} weekAgo={addDays(today, -7)} />;
+  } else if (active.key === "payroll") {
+    const m = monthParam(sp.month, today);
+    const rows = await payrollSheet(prisma, m.year, m.month, today);
+    body = rows.length ? (
+      <PayrollSheetView rows={rows} month={m.key} prev={m.prev} next={m.next} today={today} />
+    ) : (
+      <EmptyState icon={WalletCards} title="Педагогов пока нет" hint="Добавьте педагога в разделе «Педагоги»." />
+    );
+  } else if (active.key === "my") {
+    const m = monthParam(sp.month, today);
+    body = user.teacherId ? (
+      <MyEarningsView view={await teacherMonth(prisma, user.teacherId, m.year, m.month, today)} month={m.key} prev={m.prev} next={m.next} today={today} />
+    ) : (
+      <EmptyState icon={Wallet} title="Учётная запись не привязана к педагогу" hint="Обратитесь к администратору школы." />
+    );
   } else {
     const p = PLACEHOLDER[active.key]!;
     body = <EmptyState icon={p.icon} title={p.title} hint={p.hint} />;

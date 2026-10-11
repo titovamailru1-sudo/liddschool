@@ -29,6 +29,8 @@ export const authConfig = {
       const user = auth?.user;
       // Страница оплаты по ссылке из сообщения — публичная (доступ по неугадываемому токену).
       if (pathname.startsWith("/pay/")) return true;
+      // Приглашение сотрудника: задать пароль по одноразовой ссылке — до входа.
+      if (pathname.startsWith("/invite/")) return true;
       if (pathname === "/login") {
         return user ? Response.redirect(new URL("/lessons", request.nextUrl)) : true;
       }
