@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   lessonAccrual,
   monthPayroll,
+  payrollTotals,
+  tierProgress,
   type Accrual,
   type AccrualLesson,
   type RatePlanInput,
@@ -126,4 +128,32 @@ describe("monthPayroll", () => {
   });
 
   it("пустой месяц — 0", () => expect(monthPayroll([], PLAN).total).toBe(0));
+});
+
+describe("tierProgress", () => {
+  const tiers = [
+    { thresholdHours: 30, bonusPercent: 10 },
+    { thresholdHours: 45, bonusPercent: 15 },
+  ];
+  it("26 ч — до +10% осталось 4 ч", () => {
+    expect(tierProgress(26, tiers)).toEqual({ hours: 26, currentPercent: 0, next: { thresholdHours: 30, bonusPercent: 10, hoursLeft: 4 } });
+  });
+  it("ровно 30 ч — уже +10%, до +15% осталось 15 ч", () => {
+    expect(tierProgress(30, tiers)).toMatchObject({ currentPercent: 10, next: { hoursLeft: 15 } });
+  });
+  it("48 ч — максимальная ступень", () => {
+    expect(tierProgress(48, tiers)).toMatchObject({ currentPercent: 15, next: null });
+  });
+  it("без ступеней — надбавки нет", () => {
+    expect(tierProgress(50, [])).toEqual({ hours: 50, currentPercent: 0, next: null });
+  });
+});
+
+describe("payrollTotals", () => {
+  it("27 720 начислено + премия 1 000 − штраф 500 − аванс 10 000 → к выплате 18 220", () => {
+    expect(payrollTotals(27720, [1000, -500], [10000])).toEqual({ earned: 27720, adjustments: 500, total: 28220, paid: 10000, toPay: 18220 });
+  });
+  it("переплата — к выплате отрицательная сумма", () => {
+    expect(payrollTotals(1000, [], [1500]).toPay).toBe(-500);
+  });
 });

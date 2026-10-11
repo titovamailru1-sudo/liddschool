@@ -177,6 +177,8 @@ model User {
   lessonsMarked   Lesson[]            @relation("LessonMarkedBy")
   lessonsCreated  Lesson[]            @relation("LessonCreatedBy")
   seriesCreated   ScheduleSeries[]    @relation("SeriesCreatedBy")
+  payrollsClosed  Payroll[]           @relation("PayrollClosedBy")
+  invites         UserInvite[]        @relation("UserInvites")
 }
 
 model Teacher {
@@ -212,6 +214,10 @@ model RatePlan {
   trialFixed      Int        @default(500) // оплата пробного урока
   payForUnexcused Boolean    @default(false)
   bonusApply      BonusApply @default(WHOLE_MONTH)
+  // Версии: изменение шаблона создаёт новую запись с тем же familyId, действующую с 1-го числа месяца.
+  familyId        String? // id первой версии шаблона
+  versionFrom     DateTime?  @db.Date // с какого месяца действует эта версия
+  isArchived      Boolean    @default(false) // старая версия — только для истории
   createdAt       DateTime   @default(now())
 
   tiers    RateTier[]
@@ -238,7 +244,7 @@ model TeacherRatePlan {
   validFrom DateTime @db.Date // всегда 1-е число месяца: ставка меняется только с начала месяца
   createdAt DateTime @default(now())
 
-  @@index([teacherId, validFrom])
+  @@unique([teacherId, validFrom])
 }
 
 // ─────────────────────────── Клиенты ───────────────────────────
@@ -573,6 +579,9 @@ model Payroll {
   adjustments  Int           @default(0)
   total        Int
   status       PayrollStatus @default(OPEN)
+  closedAt     DateTime? // при закрытии hours/baseAmount/bonus/total фиксируются
+  closedById   String?
+  closedBy     User?         @relation("PayrollClosedBy", fields: [closedById], references: [id])
 
   items   PayrollAdjustment[]
   payouts PayrollPayment[]
@@ -581,25 +590,31 @@ model Payroll {
 }
 
 model PayrollAdjustment {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   payrollId   String
-  payroll     Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  payroll     Payroll   @relation(fields: [payrollId], references: [id], onDelete: Cascade)
   amount      Int // премия «+», штраф «−»
   reason      String
-  createdAt   DateTime @default(now())
+  kind        String    @default("MANUAL") // MANUAL — премия/штраф; RECALC — перерасчёт закрытого месяца
+  sourceMonth DateTime? @db.Date // для RECALC: за какой месяц
+  createdAt   DateTime  @default(now())
   createdById String?
-  createdBy   User?    @relation("PayrollAdjustmentAuthor", fields: [createdById], references: [id])
+  createdBy   User?     @relation("PayrollAdjustmentAuthor", fields: [createdById], references: [id])
 }
 
 model PayrollPayment {
-  id          String   @id @default(cuid())
-  payrollId   String
-  payroll     Payroll  @relation(fields: [payrollId], references: [id])
-  amount      Int
-  paidAt      DateTime
-  comment     String?
-  createdById String?
-  createdBy   User?    @relation("PayrollPaymentAuthor", fields: [createdById], references: [id])
+  id           String    @id @default(cuid())
+  payrollId    String
+  payroll      Payroll   @relation(fields: [payrollId], references: [id])
+  amount       Int
+  paidAt       DateTime
+  isAdvance    Boolean   @default(false)
+  comment      String?
+  cancelledAt  DateTime?
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+  createdById  String?
+  createdBy    User?     @relation("PayrollPaymentAuthor", fields: [createdById], references: [id])
 }
 
 model Expense {
@@ -741,6 +756,18 @@ model JobRun {
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
   result     Json?
+}
+
+// Одноразовая ссылка для сотрудника: задать пароль и войти (почта не настроена — ссылку отправляют в мессенджере).
+model UserInvite {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("UserInvites", fields: [userId], references: [id], onDelete: Cascade)
+  token       String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
 }
 
 // ─────────────────────────── Настройки и аудит ───────────────────────────

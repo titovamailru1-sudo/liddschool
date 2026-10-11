@@ -40,8 +40,20 @@ export async function loadRatePlan(db: Db, teacherId: string, on: LocalDate): Pr
     orderBy: { validFrom: "desc" },
     include: { plan: { include: { tiers: true } } },
   });
+  // Запасной вариант — версия шаблона школы, действовавшая в этом месяце (не будущая).
+  const defaultFamily = assignment ? null : await db.ratePlan.findFirst({ where: { isDefault: true }, select: { familyId: true, id: true } });
   const plan =
-    assignment?.plan ?? (await db.ratePlan.findFirst({ where: { isDefault: true }, include: { tiers: true } }));
+    assignment?.plan ??
+    (defaultFamily
+      ? await db.ratePlan.findFirst({
+          where: {
+            OR: [{ id: defaultFamily.id }, { familyId: defaultFamily.familyId ?? defaultFamily.id }],
+            AND: [{ OR: [{ versionFrom: null }, { versionFrom: { lte: toDbDate(firstOfMonth(year, month)) } }] }],
+          },
+          orderBy: { versionFrom: { sort: "desc", nulls: "last" } },
+          include: { tiers: true },
+        })
+      : null);
   if (!plan) throw new DomainError("Не настроен шаблон ставки школы");
   return {
     baseAmount: plan.baseAmount,

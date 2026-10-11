@@ -134,3 +134,37 @@ export function monthPayroll(accruals: readonly Accrual[], plan: RatePlanInput):
     total: baseAmount + bonusAmount,
   };
 }
+
+export interface TierProgress {
+  hours: number;
+  currentPercent: number;
+  /** Следующая ступень надбавки и сколько часов до неё; null — достигнута максимальная. */
+  next: { thresholdHours: number; bonusPercent: number; hoursLeft: number } | null;
+}
+
+/** Шкала часов: текущая надбавка и сколько осталось до следующей ступени («до +10% осталось 4 ч»). */
+export function tierProgress(hours: number, tiers: readonly RateTierInput[]): TierProgress {
+  const sorted = [...tiers].sort((a, b) => a.thresholdHours - b.thresholdHours);
+  const reached = sorted.filter((t) => hours >= t.thresholdHours);
+  const next = sorted.find((t) => hours < t.thresholdHours);
+  return {
+    hours,
+    currentPercent: reached.length ? reached[reached.length - 1].bonusPercent : 0,
+    next: next ? { thresholdHours: next.thresholdHours, bonusPercent: next.bonusPercent, hoursLeft: next.thresholdHours - hours } : null,
+  };
+}
+
+export interface PayrollTotals {
+  earned: number; // начислено за месяц с надбавкой
+  adjustments: number; // премии, штрафы, перерасчёт прошлых месяцев
+  total: number; // к начислению
+  paid: number; // выплачено (авансы + выплаты)
+  toPay: number; // осталось выплатить (может быть < 0, если переплатили)
+}
+
+/** Итог ведомости педагога: начислено + корректировки − выплачено. */
+export function payrollTotals(earned: number, adjustments: readonly number[], payments: readonly number[]): PayrollTotals {
+  const adj = adjustments.reduce((s, a) => s + a, 0);
+  const paid = payments.reduce((s, p) => s + p, 0);
+  return { earned, adjustments: adj, total: earned + adj, paid, toPay: earned + adj - paid };
+}

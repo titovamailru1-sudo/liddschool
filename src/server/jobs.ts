@@ -1,5 +1,5 @@
 import { invoiceTarget, monthKey, renderInvoiceReminder } from "@/domain/billing";
-import { firstOfMonth, localDateOf, parseLocalDate, toDbDate } from "@/domain/calendar";
+import { firstOfMonth, localDateOf, parseLocalDate, startOfDay, toDbDate } from "@/domain/calendar";
 import { monthName } from "@/domain/format";
 import { greetingName, studentNameGenitive } from "@/domain/names";
 import { Prisma } from "@prisma/client";
@@ -79,6 +79,25 @@ export async function processOverdue(db: RootDb, today: string) {
   return overdue;
 }
 
+/** 5-го числа — задача владельцу выплатить зарплаты за прошлый месяц (если были начисления). */
+export async function payrollPayoutTask(db: RootDb, today: string) {
+  const { year, month } = parseLocalDate(today);
+  const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+  const from = firstOfMonth(prev.year, prev.month);
+  const accruals = await db.teacherAccrual.count({
+    where: { lesson: { startsAt: { gte: startOfDay(from), lt: startOfDay(firstOfMonth(year, month)) } } },
+  });
+  if (!accruals) return false;
+  await ensureAutoTask(db, {
+    autoKey: `payroll-payout:${monthKey(prev.year, prev.month)}`,
+    title: `Выплатить зарплаты за ${monthName(prev.month)} ${prev.year}`,
+    description: "Финансы → Зарплаты: закрыть месяц и отметить выплаты.",
+    type: "payroll",
+    assignTo: "OWNER",
+  });
+  return true;
+}
+
 /**
  * Все фоновые задачи. Безопасно запускать сколько угодно раз (раз в минуту из воркера или кнопкой):
  * - с 25-го — черновики счетов на следующий месяц (один раз за месяц; отправляет администратор);
@@ -102,6 +121,7 @@ export async function runJobs(db: RootDb, now: Date, sender: MessageSender | nul
   result.charged = await chargeDueInvoices(db, today);
   if (day >= settings.overdueDay) result.overdue = await processOverdue(db, today);
   result.perLesson = await processPerLesson(db, now);
+  if (day >= 5) result.payrollTask = await payrollPayoutTask(db, today);
   result.messages = await deliverQueued(db, sender);
   return result;
 }

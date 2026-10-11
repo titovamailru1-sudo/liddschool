@@ -1,11 +1,13 @@
 import type { Db } from "../lessons/context";
 
-/** Кому ставить автозадачи «админу»: первый активный администратор, иначе владелец. */
-export async function adminAssignee(db: Db): Promise<string | null> {
-  const u =
-    (await db.user.findFirst({ where: { role: "ADMIN", isActive: true }, orderBy: { createdAt: "asc" } })) ??
-    (await db.user.findFirst({ where: { role: "OWNER", isActive: true }, orderBy: { createdAt: "asc" } }));
-  return u?.id ?? null;
+/** Кому ставить автозадачи: по умолчанию первому активному администратору (иначе владельцу), зарплаты — владельцу. */
+export async function adminAssignee(db: Db, role: "ADMIN" | "OWNER" = "ADMIN"): Promise<string | null> {
+  const order: ("ADMIN" | "OWNER")[] = role === "OWNER" ? ["OWNER"] : ["ADMIN", "OWNER"];
+  for (const r of order) {
+    const u = await db.user.findFirst({ where: { role: r, isActive: true }, orderBy: { createdAt: "asc" } });
+    if (u) return u.id;
+  }
+  return null;
 }
 
 /**
@@ -14,7 +16,16 @@ export async function adminAssignee(db: Db): Promise<string | null> {
  */
 export async function ensureAutoTask(
   db: Db,
-  t: { autoKey: string; title: string; type: string; clientId?: string; lessonId?: string; dueAt?: Date; description?: string },
+  t: {
+    autoKey: string;
+    title: string;
+    type: string;
+    clientId?: string;
+    lessonId?: string;
+    dueAt?: Date;
+    description?: string;
+    assignTo?: "ADMIN" | "OWNER";
+  },
 ) {
   const existing = await db.task.findUnique({ where: { autoKey: t.autoKey } });
   if (existing) return existing;
@@ -29,7 +40,7 @@ export async function ensureAutoTask(
       clientId: t.clientId,
       lessonId: t.lessonId,
       dueAt: t.dueAt,
-      assigneeId: await adminAssignee(db),
+      assigneeId: await adminAssignee(db, t.assignTo),
     },
   });
 }
