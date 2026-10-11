@@ -18,8 +18,9 @@ export interface GridColumn {
 }
 
 const HOUR_PX = 56;
-const DEFAULT_FROM = 8;
-const DEFAULT_TO = 22;
+// Рабочие часы сетки: с 9:00 до 23:00. Ночь не показываем.
+const DEFAULT_FROM = 9;
+const DEFAULT_TO = 23;
 
 /** Минуты от полуночи по поясу школы. */
 function minutesOf(iso: string) {
@@ -54,21 +55,14 @@ export function TimeGrid({
   const nowMin = minutesOf(now);
   const todayInView = columns.some((c) => c.date === today);
 
-  // Диапазон часов расширяется, если есть уроки раньше 8:00 или позже 22:00, и чтобы было видно текущее время.
+  // Сетка 9:00–23:00; расширяется только если урок поставлен раньше или позже.
   const all = columns.flatMap((c) => c.lessons);
-  const fromHour = Math.min(
-    DEFAULT_FROM,
-    ...all.map((l) => Math.floor(minutesOf(l.startsAt) / 60)),
-    ...(todayInView ? [Math.floor(nowMin / 60)] : []),
-  );
-  const toHour = Math.max(
-    DEFAULT_TO,
-    ...all.map((l) => Math.ceil((minutesOf(l.startsAt) + l.durationMin) / 60)),
-    ...(todayInView ? [Math.min(24, Math.floor(nowMin / 60) + 1)] : []),
-  );
+  const fromHour = Math.min(DEFAULT_FROM, ...all.map((l) => Math.floor(minutesOf(l.startsAt) / 60)));
+  const toHour = Math.max(DEFAULT_TO, ...all.map((l) => Math.ceil((minutesOf(l.startsAt) + l.durationMin) / 60)));
   const hours = Array.from({ length: toHour - fromHour }, (_, i) => fromHour + i);
   const height = hours.length * HOUR_PX;
-  const showNow = todayInView;
+  // Линия текущего времени — только когда сейчас рабочие часы.
+  const showNow = todayInView && nowMin >= fromHour * 60 && nowMin <= toHour * 60;
   const nowTop = ((nowMin - fromHour * 60) / 60) * HOUR_PX;
 
   // При открытии — прокрутить страницу к текущему часу (один раз).
@@ -108,7 +102,8 @@ export function TimeGrid({
           <div className="w-14 shrink-0">
             {hours.map((h) => (
               <div key={h} className="relative text-right text-[11px] text-text-secondary" style={{ height: HOUR_PX }}>
-                <span className="absolute -top-2 right-2 tabular-nums">{h > fromHour ? `${String(h).padStart(2, "0")}:00` : ""}</span>
+                {/* Первый час подписываем внутри строки, остальные — на линии сетки */}
+                <span className={cn("absolute right-2 tabular-nums", h > fromHour ? "-top-2" : "top-0.5")}>{`${String(h).padStart(2, "0")}:00`}</span>
               </div>
             ))}
           </div>
