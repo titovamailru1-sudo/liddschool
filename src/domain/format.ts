@@ -56,6 +56,16 @@ const MONTHS_PREP = [
   "июле", "августе", "сентябре", "октябре", "ноябре", "декабре",
 ] as const;
 
+const MONTHS_GEN = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+] as const;
+
+/** «ноября» — для «уроки ноября», «11 ноября». */
+export function monthNameGen(month: number): string {
+  return MONTHS_GEN[month - 1];
+}
+
 /** «ноябрь» — для «Абонемент на ноябрь». */
 export function monthName(month: number): string {
   return MONTHS_NOM[month - 1];

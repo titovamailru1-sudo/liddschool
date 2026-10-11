@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatHours, formatRub, formatTime, monthName, monthNamePrep, plural } from "./format";
+import { formatDate, formatHours, formatRub, formatTime, monthName, monthNameGen, monthNamePrep, plural } from "./format";
 import { greetingName, studentNameGenitive, subjectDative, subjectsDative } from "./names";
 
 const NB = " ";
@@ -27,6 +27,8 @@ describe("даты и время", () => {
     expect(monthName(11)).toBe("ноябрь");
     expect(monthNamePrep(11)).toBe("ноябре");
     expect(monthNamePrep(5)).toBe("мае");
+    expect(monthNameGen(3)).toBe("марта");
+    expect(monthNameGen(5)).toBe("мая");
   });
 });
 
