@@ -27,6 +27,8 @@ export const authConfig = {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
       const user = auth?.user;
+      // Страница оплаты по ссылке из сообщения — публичная (доступ по неугадываемому токену).
+      if (pathname.startsWith("/pay/")) return true;
       if (pathname === "/login") {
         return user ? Response.redirect(new URL("/lessons", request.nextUrl)) : true;
       }

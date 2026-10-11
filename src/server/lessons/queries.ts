@@ -4,6 +4,7 @@ import { lessonDisplayStatus, settleLesson, type LessonDisplayStatus } from "@/d
 import { can } from "@/lib/access";
 import { prisma } from "../db";
 import type { CurrentUser } from "../session";
+import { lessonHours, lessonPrice } from "@/domain/pricing";
 import { loadLessonStudents, loadRatePlan, loadTariffs } from "./context";
 import { instantRange } from "./generation";
 
@@ -26,6 +27,7 @@ export interface CalendarLesson {
   subject: string;
   isGroup: boolean;
   status: LessonDisplayStatus;
+  atRisk: boolean; // поурочник не оплатил к дедлайну
 }
 
 /** Педагог видит только свои уроки — фильтр всегда на сервере. */
@@ -62,6 +64,7 @@ export async function calendarLessons(
       client: { select: { fullName: true } },
       group: { select: { name: true } },
       attendances: { select: { status: true } },
+      paymentLinks: { where: { atRiskAt: { not: null } }, select: { id: true } },
     },
   });
   const lessons = rows.map((l) => ({
@@ -75,6 +78,7 @@ export async function calendarLessons(
     subject: l.subject,
     isGroup: !!l.groupId,
     status: lessonDisplayStatus(l.status, l.cancelledBy, !!l.groupId, l.attendances.map((a) => a.status)),
+    atRisk: l.status === "PLANNED" && l.paymentLinks.length > 0,
   }));
   return f.status ? lessons.filter((l) => l.status === f.status) : lessons;
 }
@@ -112,6 +116,8 @@ export async function lessonDetail(user: CurrentUser, id: string) {
       createdBy: { select: { name: true } },
       markedBy: { select: { name: true } },
       series: { select: { startsOn: true, endsOn: true } },
+      paymentLinks: { select: { clientId: true, token: true, sentAt: true, atRiskAt: true } },
+      payments: { where: { cancelledAt: null }, select: { clientId: true, amount: true } },
     },
   });
   if (!l) return null;
@@ -183,6 +189,18 @@ export async function lessonDetail(user: CurrentUser, id: string) {
       fullName: s.fullName,
       attendance: attendanceById.get(s.clientId)?.status ?? null,
     })),
+    // Поурочная оплата — ученикам на поурочной оплате; видят сотрудники с доступом к платежам.
+    perLesson: can(user.role, "finance.payments")
+      ? students
+          .filter((s) => s.paymentMode === "PER_LESSON" && !l.isTrial)
+          .map((s) => {
+            const price = lessonPrice(lessonHours(l.durationMin), s.pricePerHour);
+            const paid = l.payments.filter((p) => p.clientId === s.clientId).reduce((sum, p) => sum + p.amount, 0);
+            const link = l.paymentLinks.find((x) => x.clientId === s.clientId);
+            const state = paid >= price ? "paid" : link?.atRiskAt ? "atRisk" : link?.sentAt ? "linkSent" : "pending";
+            return { clientId: s.clientId, fullName: s.fullName, price, state: state as "paid" | "atRisk" | "linkSent" | "pending" };
+          })
+      : [],
     finance,
   };
 }

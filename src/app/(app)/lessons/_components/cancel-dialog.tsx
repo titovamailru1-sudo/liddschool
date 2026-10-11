@@ -19,7 +19,17 @@ import { cancelLessonAction } from "../actions";
  * Отмена урока. Школой — без последствий для денег. Учеником (только индивидуальный урок):
  * предупредил за 24 ч и раньше — уважительный пропуск, позже — неуважительный; администратор может изменить.
  */
-export function CancelDialog({ open, onOpenChange, lesson }: { open: boolean; onOpenChange: (o: boolean) => void; lesson: LessonDetail }) {
+export function CancelDialog({
+  open,
+  onOpenChange,
+  lesson,
+  onMoveInstead,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  lesson: LessonDetail;
+  onMoveInstead?: () => void;
+}) {
   const [by, setBy] = useState<"SCHOOL" | "CLIENT">("SCHOOL");
   const [nowAt] = useState(() => new Date());
   const [notifiedDate, setNotifiedDate] = useState(localDateOf(nowAt));
@@ -71,6 +81,15 @@ export function CancelDialog({ open, onOpenChange, lesson }: { open: boolean; on
               </label>
             )}
           </RadioGroup>
+
+          {by === "SCHOOL" && onMoveInstead && (
+            <div className="rounded-lg border border-moved/30 bg-moved-soft p-3 text-sm">
+              <p className="mb-2">Педагог проведёт урок в другой день? Оформите перенос — деньги не двигаются, урок остаётся оплаченным.</p>
+              <Button type="button" variant="outline" size="sm" onClick={onMoveInstead}>
+                Перенести на другой день вместо отмены
+              </Button>
+            </div>
+          )}
 
           {by === "CLIENT" && (
             <div className="space-y-3 rounded-lg border bg-subtle/50 p-3">

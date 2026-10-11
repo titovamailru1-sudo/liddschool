@@ -16,6 +16,7 @@ import { formatDate, formatRub, formatTime } from "@/domain/format";
 import { LESSON_STATUS, PAYMENT_MODE_LABEL } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { LessonDetail } from "@/server/lessons/queries";
+import { PaymentDialog, type PaymentTarget } from "@/components/billing/payment-dialog";
 import { settleLessonAction, updateNotesAction, type ActionResult } from "../actions";
 import { CancelDialog } from "./cancel-dialog";
 import { MoveDialog } from "./move-dialog";
@@ -31,17 +32,19 @@ export function LessonSheet({
   teachers,
   onClose,
   hrefFor,
+  today,
 }: {
   lesson: LessonDetail | null;
   perms: LessonPermissions;
   teachers: { id: string; fullName: string }[];
   onClose: () => void;
   hrefFor: (lessonId: string, date: string) => string;
+  today: string;
 }) {
   return (
     <Sheet open={!!lesson} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full gap-0 overflow-y-auto data-[side=right]:sm:max-w-[520px]">
-        {lesson && <LessonPanel key={lesson.id + lesson.status + (lesson.markedAt ?? "")} lesson={lesson} perms={perms} teachers={teachers} hrefFor={hrefFor} />}
+        {lesson && <LessonPanel key={lesson.id + lesson.status + (lesson.markedAt ?? "")} lesson={lesson} perms={perms} teachers={teachers} hrefFor={hrefFor} today={today} />}
       </SheetContent>
     </Sheet>
   );
@@ -52,11 +55,13 @@ function LessonPanel({
   perms,
   teachers,
   hrefFor,
+  today,
 }: {
   lesson: LessonDetail;
   perms: LessonPermissions;
   teachers: { id: string; fullName: string }[];
   hrefFor: (lessonId: string, date: string) => string;
+  today: string;
 }) {
   const startsAt = new Date(lesson.startsAt);
   const end = new Date(startsAt.getTime() + lesson.durationMin * 60_000);
@@ -163,6 +168,8 @@ function LessonPanel({
           </Section>
         )}
 
+        {lesson.perLesson.length > 0 && !isMoved && lesson.status !== "CANCELLED" && <PerLessonBlock lesson={lesson} today={today} />}
+
         {lesson.finance && <FinanceBlock finance={lesson.finance} />}
 
         <div className="space-y-0.5 border-t pt-3 text-xs text-text-secondary">
@@ -177,8 +184,64 @@ function LessonPanel({
       </div>
 
       <MoveDialog open={moveOpen} onOpenChange={setMoveOpen} lesson={lesson} teachers={teachers} />
-      <CancelDialog open={cancelOpen} onOpenChange={setCancelOpen} lesson={lesson} />
+      <CancelDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        lesson={lesson}
+        onMoveInstead={
+          isPlanned
+            ? () => {
+                setCancelOpen(false);
+                setMoveOpen(true);
+              }
+            : undefined
+        }
+      />
     </>
+  );
+}
+
+const PAY_STATE = {
+  paid: { label: "Оплачено", tone: "done" },
+  atRisk: { label: "Под угрозой", tone: "danger" },
+  linkSent: { label: "Ссылка отправлена", tone: "warning" },
+  pending: { label: "Ожидается", tone: "planned" },
+} as const;
+
+/** Оплата урока поурочниками: статус и «Принять оплату». */
+function PerLessonBlock({ lesson, today }: { lesson: LessonDetail; today: string }) {
+  const [payFor, setPayFor] = useState<PaymentTarget | null>(null);
+  const start = new Date(lesson.startsAt);
+  return (
+    <Section title="Оплата урока">
+      <ul className="divide-y rounded-lg border text-sm">
+        {lesson.perLesson.map((s) => (
+          <li key={s.clientId} className="flex items-center gap-2 px-3 py-2">
+            <span className="flex-1 truncate">{s.fullName}</span>
+            <span className="tabular-nums">{formatRub(s.price)}</span>
+            <StatusBadge tone={PAY_STATE[s.state].tone}>{PAY_STATE[s.state].label}</StatusBadge>
+            {s.state !== "paid" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPayFor({
+                    clientId: s.clientId,
+                    clientName: s.fullName,
+                    lessonId: lesson.id,
+                    lessonLabel: `Урок ${formatDate(start)} ${formatTime(start)}`,
+                    amount: s.price,
+                  })
+                }
+              >
+                Принять
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <PaymentDialog open={!!payFor} onOpenChange={(o) => !o && setPayFor(null)} target={payFor} today={today} />
+    </Section>
   );
 }
 

@@ -1,4 +1,4 @@
-import { Ban, Check, MoveRight, Users, X } from "lucide-react";
+import { Ban, Check, MoveRight, TriangleAlert, Users, X } from "lucide-react";
 import { formatTime } from "@/domain/format";
 import { cn } from "@/lib/utils";
 import type { CalendarLesson } from "@/server/lessons/queries";
@@ -48,10 +48,11 @@ export function LessonBlock({
         e.stopPropagation();
         onClick();
       }}
-      title={`${formatTime(start)}–${formatTime(end)} ${lesson.title} · ${lesson.subject} · ${lesson.teacherName}`}
+      title={`${formatTime(start)}–${formatTime(end)} ${lesson.title} · ${lesson.subject} · ${lesson.teacherName}${lesson.atRisk ? " · под угрозой: не оплачен" : ""}`}
       className={cn(
         "flex w-full min-w-0 flex-col overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 text-left text-xs leading-tight transition hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         inactive && "opacity-60",
+        lesson.atRisk && "ring-2 ring-warning ring-inset",
         className,
       )}
       style={{ borderLeftColor: lesson.teacherColor, background: `color-mix(in srgb, ${lesson.teacherColor} 14%, white)`, ...style }}
@@ -60,6 +61,7 @@ export function LessonBlock({
         {formatTime(start)}
         {!compact && `–${formatTime(end)}`}
         {lesson.isGroup && <Users className="size-3" />}
+        {lesson.atRisk && <TriangleAlert className="size-3.5 text-warning" aria-label="Под угрозой: не оплачен" />}
         {Icon && <Icon className={cn("ml-auto size-3.5 shrink-0", STATUS_ICON_COLOR[lesson.status])} strokeWidth={2.5} />}
       </span>
       <span className={cn("truncate font-semibold text-text-primary", inactive && "line-through")}>{lesson.title}</span>

@@ -238,6 +238,7 @@ export function LessonsView(p: LessonsViewProps) {
         teachers={p.options.teachers}
         onClose={() => set({ lesson: null })}
         hrefFor={(id, date) => href({ lesson: id, date })}
+        today={p.today}
       />
       {p.perms.canCreate && (
         <CreateLessonSheet
