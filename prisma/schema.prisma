@@ -167,6 +167,9 @@ model User {
   expenses        Expense[]           @relation("ExpenseAuthor")
   payrollAdjusts  PayrollAdjustment[] @relation("PayrollAdjustmentAuthor")
   payrollPayments PayrollPayment[]    @relation("PayrollPaymentAuthor")
+  lessonsMarked   Lesson[]            @relation("LessonMarkedBy")
+  lessonsCreated  Lesson[]            @relation("LessonCreatedBy")
+  seriesCreated   ScheduleSeries[]    @relation("SeriesCreatedBy")
 }
 
 model Teacher {
@@ -176,6 +179,7 @@ model Teacher {
   fullName  String
   phone     String?
   color     String // hex для расписания
+  onlineUrl String? // постоянная ссылка на онлайн-занятие, подставляется в новые уроки
   subjects  String[]
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -335,46 +339,54 @@ model ScheduleSeries {
   weekday     Int // 1 = пн … 7 = вс (ISO)
   startTime   String // «16:00», в поясе школы
   durationMin Int // 45 / 60 / 90
-  format      LessonFormat @default(OFFLINE)
+  format      LessonFormat @default(ONLINE)
   roomId      String?
   room        Room?        @relation(fields: [roomId], references: [id])
   onlineUrl   String?
   startsOn    DateTime     @db.Date // календарная дата в поясе школы, включительно
   endsOn      DateTime?    @db.Date // включительно
+  createdById String?
+  createdBy   User?        @relation("SeriesCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime     @default(now())
 
   lessons Lesson[]
 }
 
 model Lesson {
-  id          String          @id @default(cuid())
-  seriesId    String?
-  series      ScheduleSeries? @relation(fields: [seriesId], references: [id])
-  teacherId   String
-  teacher     Teacher         @relation(fields: [teacherId], references: [id])
-  clientId    String?
-  client      Client?         @relation(fields: [clientId], references: [id])
-  groupId     String?
-  group       Group?          @relation(fields: [groupId], references: [id])
-  subject     String
-  program     Program
-  startsAt    DateTime
-  durationMin Int
-  format      LessonFormat    @default(OFFLINE)
-  roomId      String?
-  room        Room?           @relation(fields: [roomId], references: [id])
-  onlineUrl   String?
-  status      LessonStatus    @default(PLANNED)
-  cancelledBy CancelledBy?
-  movedToId   String?         @unique
-  movedTo     Lesson?         @relation("LessonMove", fields: [movedToId], references: [id])
-  movedFrom   Lesson?         @relation("LessonMove")
-  isTrial     Boolean         @default(false)
-  topic       String?
-  homework    String?
-  comment     String?
-  markedAt    DateTime?
-  createdAt   DateTime        @default(now())
+  id           String          @id @default(cuid())
+  seriesId     String?
+  series       ScheduleSeries? @relation(fields: [seriesId], references: [id])
+  teacherId    String
+  teacher      Teacher         @relation(fields: [teacherId], references: [id])
+  clientId     String?
+  client       Client?         @relation(fields: [clientId], references: [id])
+  groupId      String?
+  group        Group?          @relation(fields: [groupId], references: [id])
+  subject      String
+  program      Program
+  startsAt     DateTime
+  durationMin  Int
+  format       LessonFormat    @default(ONLINE) // сейчас все уроки онлайн
+  roomId       String?
+  room         Room?           @relation(fields: [roomId], references: [id])
+  onlineUrl    String?
+  status       LessonStatus    @default(PLANNED)
+  cancelledBy  CancelledBy?
+  cancelledAt  DateTime?
+  cancelReason String?
+  movedToId    String?         @unique
+  movedTo      Lesson?         @relation("LessonMove", fields: [movedToId], references: [id])
+  movedFrom    Lesson?         @relation("LessonMove")
+  isTrial      Boolean         @default(false)
+  topic        String?
+  homework     String?
+  comment      String?
+  markedAt     DateTime?
+  markedById   String?
+  markedBy     User?           @relation("LessonMarkedBy", fields: [markedById], references: [id])
+  createdById  String?
+  createdBy    User?           @relation("LessonCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime        @default(now())
 
   attendances   Attendance[]
   invoiceItems  InvoiceItem[]
@@ -466,38 +478,45 @@ model Payment {
 
 // Единый журнал движения денег клиента. Баланс = сумма amount.
 model LedgerEntry {
-  id          String          @id @default(cuid())
-  clientId    String
-  client      Client          @relation(fields: [clientId], references: [id])
-  type        LedgerType
-  amount      Int // + поступление / − начисление
-  paymentId   String?
-  payment     Payment?        @relation(fields: [paymentId], references: [id])
-  lessonId    String?
-  lesson      Lesson?         @relation(fields: [lessonId], references: [id])
-  invoiceId   String?
-  invoice     MonthlyInvoice? @relation(fields: [invoiceId], references: [id])
-  comment     String?
-  createdById String?
-  createdBy   User?           @relation(fields: [createdById], references: [id])
-  createdAt   DateTime        @default(now())
+  id           String          @id @default(cuid())
+  clientId     String
+  client       Client          @relation(fields: [clientId], references: [id])
+  type         LedgerType
+  amount       Int // + поступление / − начисление
+  paymentId    String?
+  payment      Payment?        @relation(fields: [paymentId], references: [id])
+  lessonId     String?
+  lesson       Lesson?         @relation(fields: [lessonId], references: [id])
+  invoiceId    String?
+  invoice      MonthlyInvoice? @relation(fields: [invoiceId], references: [id])
+  comment      String?
+  // Сторно: запись, которую эта запись отменяет (финансовые записи не удаляются)
+  reversalOfId String?         @unique
+  reversalOf   LedgerEntry?    @relation("LedgerReversal", fields: [reversalOfId], references: [id])
+  reversedBy   LedgerEntry?    @relation("LedgerReversal")
+  createdById  String?
+  createdBy    User?           @relation(fields: [createdById], references: [id])
+  createdAt    DateTime        @default(now())
 
   @@index([clientId, createdAt])
+  @@index([lessonId])
 }
 
 // ─────────────────────────── Зарплаты ───────────────────────────
 
 // Начисление педагогу за конкретный урок (пересчитывается при изменении отметки)
 model TeacherAccrual {
-  id        String   @id @default(cuid())
-  teacherId String
-  teacher   Teacher  @relation(fields: [teacherId], references: [id])
-  lessonId  String   @unique
-  lesson    Lesson   @relation(fields: [lessonId], references: [id])
-  hours     Decimal  @db.Decimal(5, 2) // 0 для пробного
-  amount    Int // без надбавки за объём
-  basis     String // «1,5 ч × 700 ₽ + 5 × 100 ₽»
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  teacherId    String
+  teacher      Teacher  @relation(fields: [teacherId], references: [id])
+  lessonId     String   @unique
+  lesson       Lesson   @relation(fields: [lessonId], references: [id])
+  hours        Decimal  @db.Decimal(5, 2) // в объём для надбавки; 0 для пробного
+  hourlyAmount Int      @default(0) // часы × ставка — к ней применяется надбавка
+  extraAmount  Int      @default(0) // доплата за учеников группы / пробный — без надбавки
+  amount       Int // hourlyAmount + extraAmount, без надбавки за объём
+  basis        String // «1,5 ч × 700 ₽ + 5 × 100 ₽»
+  createdAt    DateTime @default(now())
 }
 
 model Payroll {

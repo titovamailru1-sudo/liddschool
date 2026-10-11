@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { fromDbDate, isoWeekday, localDateOf, toDbDate, zonedInstant } from "./calendar";
+import {
+  addDays,
+  fromDbDate,
+  generationHorizon,
+  isoWeekday,
+  localDateOf,
+  shiftView,
+  startOfWeek,
+  toDbDate,
+  viewRange,
+  zonedInstant,
+} from "./calendar";
 import { occurrencesInMonth, seriesOccurrencesInMonth, type SeriesInput } from "./schedule";
 
 const base: SeriesInput = {
@@ -85,4 +96,32 @@ describe("occurrencesInMonth", () => {
     expect(occ).toHaveLength(8);
     expect(occ.slice(0, 3).map((o) => o.localDate)).toEqual(["2026-11-03", "2026-11-06", "2026-11-10"]);
   });
+});
+
+describe("диапазоны видов календаря", () => {
+  it("неделя — с понедельника по воскресенье", () => {
+    expect(viewRange("week", "2026-10-11")).toEqual({ from: "2026-10-05", to: "2026-10-11" });
+    expect(startOfWeek("2026-10-12")).toBe("2026-10-12");
+  });
+
+  it("месяц — полные недели: ноябрь 2026 с 26.10 по 06.12", () => {
+    expect(viewRange("month", "2026-11-15")).toEqual({ from: "2026-10-26", to: "2026-12-06" });
+  });
+
+  it("список — календарный месяц", () => {
+    expect(viewRange("list", "2026-02-10")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+  });
+
+  it("навигация по месяцам через год", () => {
+    expect(shiftView("month", "2026-12-20", 1)).toBe("2027-01-01");
+    expect(shiftView("list", "2026-01-05", -1)).toBe("2025-12-01");
+    expect(shiftView("week", "2026-10-11", -1)).toBe("2026-10-04");
+  });
+
+  it("горизонт генерации — конец следующего месяца", () => {
+    expect(generationHorizon("2026-10-11")).toBe("2026-11-30");
+    expect(generationHorizon("2026-12-31")).toBe("2027-01-31");
+  });
+
+  it("addDays через границу месяца", () => expect(addDays("2026-10-31", 1)).toBe("2026-11-01"));
 });

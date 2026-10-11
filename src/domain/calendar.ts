@@ -70,3 +70,67 @@ export function firstOfMonth(year: number, month: number): LocalDate {
 export function nextMonth(year: number, month: number): { year: number; month: number } {
   return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
 }
+
+/** Сдвиг календарной даты на n дней. */
+export function addDays(d: LocalDate, n: number): LocalDate {
+  const { year, month, day } = parseLocalDate(d);
+  const x = new Date(Date.UTC(year, month - 1, day + n));
+  return x.toISOString().slice(0, 10);
+}
+
+export function lastOfMonth(year: number, month: number): LocalDate {
+  return localDate(year, month, daysInMonth(year, month));
+}
+
+/** Понедельник недели, в которую входит дата. */
+export function startOfWeek(d: LocalDate): LocalDate {
+  return addDays(d, 1 - isoWeekday(d));
+}
+
+/** Начало суток по поясу школы (UTC-момент). Интервал суток — [startOfDay(d); startOfDay(d + 1)). */
+export function startOfDay(d: LocalDate, tz: string = SCHOOL_TZ): Date {
+  return zonedInstant(d, "00:00", tz);
+}
+
+export type CalendarView = "day" | "week" | "month" | "list";
+
+/**
+ * Диапазон дат, который показывает вид календаря (включительно):
+ * день — сам день; неделя — пн–вс; месяц — полные недели, покрывающие месяц; список — календарный месяц.
+ */
+export function viewRange(view: CalendarView, d: LocalDate): { from: LocalDate; to: LocalDate } {
+  const { year, month } = parseLocalDate(d);
+  switch (view) {
+    case "day":
+      return { from: d, to: d };
+    case "week": {
+      const from = startOfWeek(d);
+      return { from, to: addDays(from, 6) };
+    }
+    case "month": {
+      const from = startOfWeek(firstOfMonth(year, month));
+      const last = lastOfMonth(year, month);
+      return { from, to: addDays(startOfWeek(last), 6) };
+    }
+    case "list":
+      return { from: firstOfMonth(year, month), to: lastOfMonth(year, month) };
+  }
+}
+
+/** Шаг навигации «назад/вперёд» для вида календаря. */
+export function shiftView(view: CalendarView, d: LocalDate, dir: 1 | -1): LocalDate {
+  if (view === "day") return addDays(d, dir);
+  if (view === "week") return addDays(d, 7 * dir);
+  const { year, month } = parseLocalDate(d);
+  const m = month + dir;
+  const y = m < 1 ? year - 1 : m > 12 ? year + 1 : year;
+  const mm = ((m + 11) % 12) + 1;
+  return localDate(y, mm, 1);
+}
+
+/** До какой даты уроки из серий создаются заранее: конец следующего месяца. */
+export function generationHorizon(today: LocalDate): LocalDate {
+  const { year, month } = parseLocalDate(today);
+  const n = nextMonth(year, month);
+  return lastOfMonth(n.year, n.month);
+}

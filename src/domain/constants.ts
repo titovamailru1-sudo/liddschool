@@ -9,5 +9,6 @@ export type PaymentMode = "MONTHLY" | "PER_LESSON";
 export type TariffKind = "INDIVIDUAL" | "GROUP";
 export type Gender = "MALE" | "FEMALE";
 export type LessonStatus = "PLANNED" | "DONE" | "CANCELLED" | "MOVED";
+export type CancelledByKind = "SCHOOL" | "CLIENT";
 export type AttendanceStatus = "PRESENT" | "ABSENT_EXCUSED" | "ABSENT_UNEXCUSED";
 export type BonusApply = "WHOLE_MONTH" | "ABOVE_THRESHOLD";
