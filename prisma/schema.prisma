@@ -139,6 +139,13 @@ enum LeadSource {
   OTHER
 }
 
+enum MessageStatus {
+  QUEUED // ждёт отправки
+  SENT
+  FAILED
+  SKIPPED // не отправлено: у родителя нет Telegram или бот не настроен
+}
+
 enum Channel {
   TELEGRAM
   WHATSAPP
@@ -262,18 +269,24 @@ model Client {
   ledgerEntries LedgerEntry[]
   tasks         Task[]
   convertedFrom Lead?
+  messages      Message[]
+  paymentLinks  PaymentLink[]
 }
 
 model Parent {
-  id               String  @id @default(cuid())
+  id               String    @id @default(cuid())
   clientId         String
-  client           Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   fullName         String
   relation         String? // мама, папа…
   phone            String
   telegramChatId   String?
-  preferredChannel Channel @default(TELEGRAM)
-  isPrimary        Boolean @default(true)
+  telegramLinkedAt DateTime?
+  preferredChannel Channel   @default(TELEGRAM)
+  isPrimary        Boolean   @default(true)
+
+  invites  TelegramInvite[]
+  messages Message[]
 }
 
 // ─────────────────────────── Тарифы ───────────────────────────
@@ -395,6 +408,9 @@ model Lesson {
   tasks         Task[]
   trialForLead  Lead?
   ledgerEntries LedgerEntry[]
+  adjustments   InvoiceAdjustment[]
+  paymentLinks  PaymentLink[]
+  messages      Message[]
 
   @@unique([seriesId, startsAt]) // повторная генерация из серии не создаёт дублей
   @@index([teacherId, startsAt])
@@ -420,29 +436,34 @@ model Attendance {
 // ─────────────────────────── Деньги клиентов ───────────────────────────
 
 model MonthlyInvoice {
-  id              String        @id @default(cuid())
-  clientId        String
-  client          Client        @relation(fields: [clientId], references: [id])
-  month           DateTime      @db.Date // 1-е число месяца
-  lessonsCount    Int
-  hours           Decimal       @db.Decimal(6, 2)
-  pricePerHour    Int // тариф абонемента на момент расчёта
-  amount          Int // по абонементу
-  perLessonAmount Int // сколько вышло бы поурочно (для сообщения)
-  debtIncluded    Int           @default(0)
-  creditApplied   Int           @default(0) // перенос с прошлого месяца
-  total           Int
-  dueDate         DateTime      @db.Date
-  status          InvoiceStatus @default(DRAFT)
-  messageText     String?
-  sentAt          DateTime?
-  viewedAt        DateTime?
-  paidAt          DateTime?
-  createdAt       DateTime      @default(now())
+  id               String        @id @default(cuid())
+  clientId         String
+  client           Client        @relation(fields: [clientId], references: [id])
+  month            DateTime      @db.Date // 1-е число месяца
+  lessonsCount     Int
+  hours            Decimal       @db.Decimal(6, 2)
+  pricePerHour     Int // тариф абонемента на момент расчёта
+  amount           Int // по абонементу
+  perLessonAmount  Int // сколько вышло бы поурочно (для сообщения)
+  debtIncluded     Int           @default(0)
+  creditApplied    Int           @default(0) // переплата (положительный баланс), вычтенная из счёта
+  adjustmentsTotal Int           @default(0) // перенос разницы прошлых месяцев: вычеты «−», доплаты «+»
+  total            Int
+  dueDate          DateTime      @db.Date
+  status           InvoiceStatus @default(DRAFT)
+  messageText      String?
+  sentAt           DateTime?
+  viewedAt         DateTime?
+  paidAt           DateTime?
+  chargedAt        DateTime? // когда счёт списан с баланса (1-го числа или при отправке после 1-го)
+  createdAt        DateTime      @default(now())
 
   items         InvoiceItem[]
+  adjustments   InvoiceAdjustment[]
   payments      Payment[]
   ledgerEntries LedgerEntry[]
+  messages      Message[]
+  paymentLinks  PaymentLink[]
 
   @@unique([clientId, month])
 }
@@ -455,6 +476,25 @@ model InvoiceItem {
   lesson    Lesson         @relation(fields: [lessonId], references: [id])
   hours     Decimal        @db.Decimal(5, 2)
   amount    Int
+
+  @@unique([invoiceId, lessonId])
+  @@index([lessonId])
+}
+
+// Перенос разницы: вычет за урок прошлого месяца, отменённый школой / уважительный пропуск,
+// или доплата за урок, добавленный после выставления счёта. Один урок корректируется один раз.
+model InvoiceAdjustment {
+  id        String         @id @default(cuid())
+  invoiceId String
+  invoice   MonthlyInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  clientId  String
+  lessonId  String
+  lesson    Lesson         @relation(fields: [lessonId], references: [id])
+  amount    Int // вычет «−», доплата «+»
+  reason    String
+
+  @@unique([clientId, lessonId])
+  @@index([invoiceId])
 }
 
 model Payment {
@@ -471,6 +511,8 @@ model Payment {
   receivedBy   User?           @relation(fields: [receivedById], references: [id])
   comment      String?
   paidAt       DateTime        @default(now())
+  cancelledAt  DateTime? // ошибочный платёж: сторнирован в журнале, сам платёж остаётся в истории
+  cancelReason String?
   createdAt    DateTime        @default(now())
 
   ledgerEntries LedgerEntry[]
@@ -633,6 +675,72 @@ model LeadTouch {
   authorId String?
   author   User?    @relation(fields: [authorId], references: [id])
   at       DateTime @default(now())
+}
+
+// ─────────────────────────── Сообщения и оплата по ссылке ───────────────────────────
+
+// Исходящие сообщения родителям (Telegram, позже WhatsApp/SMS) — с историей доставки.
+model Message {
+  id          String          @id @default(cuid())
+  channel     Channel         @default(TELEGRAM)
+  kind        String // invoice, lesson_payment, invoice_reminder, other
+  clientId    String
+  client      Client          @relation(fields: [clientId], references: [id])
+  parentId    String?
+  parent      Parent?         @relation(fields: [parentId], references: [id])
+  invoiceId   String?
+  invoice     MonthlyInvoice? @relation(fields: [invoiceId], references: [id])
+  lessonId    String?
+  lesson      Lesson?         @relation(fields: [lessonId], references: [id])
+  text        String
+  status      MessageStatus   @default(QUEUED)
+  error       String?
+  createdById String?
+  createdAt   DateTime        @default(now())
+  sentAt      DateTime?
+
+  @@index([status, createdAt])
+  @@index([clientId, createdAt])
+}
+
+// Одноразовая ссылка-приглашение t.me/<бот>?start=<code> для привязки родителя к боту.
+model TelegramInvite {
+  id        String    @id @default(cuid())
+  parentId  String
+  parent    Parent    @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  code      String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+}
+
+// Ссылка на страницу оплаты (/pay/<token>): реквизиты и QR для перевода. Для поурочников —
+// одна на (урок, ученик); отметка «под угрозой», если к дедлайну не оплачено.
+model PaymentLink {
+  id        String          @id @default(cuid())
+  token     String          @unique
+  clientId  String
+  client    Client          @relation(fields: [clientId], references: [id])
+  invoiceId String?         @unique
+  invoice   MonthlyInvoice? @relation(fields: [invoiceId], references: [id])
+  lessonId  String?
+  lesson    Lesson?         @relation(fields: [lessonId], references: [id])
+  amount    Int
+  purpose   String
+  createdAt DateTime        @default(now())
+  sentAt    DateTime?
+  atRiskAt  DateTime? // не оплачено к дедлайну (за 24 ч до урока)
+
+  @@unique([lessonId, clientId])
+}
+
+// Журнал фоновых задач: ключ гарантирует, что задача на период выполняется один раз.
+model JobRun {
+  id         String    @id @default(cuid())
+  key        String    @unique // «invoices:2026-11», «charge:2026-11», «overdue:2026-11»
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  result     Json?
 }
 
 // ─────────────────────────── Настройки и аудит ───────────────────────────
