@@ -48,7 +48,7 @@ export function PayrollDetail({ view, canManage, today }: { view: TeacherMonth; 
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
         <Kpi label={view.ended ? "Начислено" : "Начислено на сегодня"} value={formatRub(earned)} hint={`${formatHours(hours)} ч · уроков ${view.lessons.length}`} />
         <Kpi label="Надбавка за объём" value={bonusPercent ? `+${bonusPercent}% · ${formatRub(bonusAmount)}` : "нет"} hint={tierHint(view.progress)} />
         <Kpi
@@ -198,9 +198,9 @@ export function PayrollDetail({ view, canManage, today }: { view: TeacherMonth; 
 
 function Kpi({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: "danger" | "done" }) {
   return (
-    <div className="rounded-lg border bg-surface px-4 py-3">
+    <div className="rounded-lg border bg-surface px-3 py-2.5 sm:px-4 sm:py-3">
       <div className="text-xs text-text-secondary">{label}</div>
-      <div className={cn("text-lg font-semibold tabular-nums", accent === "danger" && "text-danger", accent === "done" && "text-done")}>{value}</div>
+      <div className={cn("text-base font-semibold tabular-nums sm:text-lg", accent === "danger" && "text-danger", accent === "done" && "text-done")}>{value}</div>
       {hint && <div className="text-xs text-text-secondary">{hint}</div>}
     </div>
   );

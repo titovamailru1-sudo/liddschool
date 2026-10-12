@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { localDateOf } from "@/domain/calendar";
-import { formatTime } from "@/domain/format";
+import { formatLocalDate, formatTime } from "@/domain/format";
 import type { LessonDetail } from "@/server/lessons/queries";
 import type { ConflictView } from "@/server/lessons/service";
 import { moveLessonAction } from "../actions";
@@ -20,16 +20,21 @@ export function MoveDialog({
   onOpenChange,
   lesson,
   teachers,
+  initial,
+  title,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  lesson: LessonDetail;
+  lesson: Pick<LessonDetail, "id" | "startsAt"> & { teacher: { id: string } };
   teachers: { id: string; fullName: string }[];
+  /** Новые дата/время/педагог — когда урок перетащили в сетке. */
+  initial?: { date: string; time: string; teacherId: string };
+  title?: string;
 }) {
   const startsAt = new Date(lesson.startsAt);
-  const [date, setDate] = useState(localDateOf(startsAt));
-  const [time, setTime] = useState(formatTime(startsAt));
-  const [teacherId, setTeacherId] = useState(lesson.teacher.id);
+  const [date, setDate] = useState(initial?.date ?? localDateOf(startsAt));
+  const [time, setTime] = useState(initial?.time ?? formatTime(startsAt));
+  const [teacherId, setTeacherId] = useState(initial?.teacherId ?? lesson.teacher.id);
   const [conflicts, setConflicts] = useState<ConflictView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -54,7 +59,10 @@ export function MoveDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Перенести урок</DialogTitle>
-          <DialogDescription>Исходный урок останется в истории со статусом «Перенесён».</DialogDescription>
+          <DialogDescription>
+            {title && `${title}: было ${formatLocalDate(localDateOf(startsAt))} в ${formatTime(startsAt)}. `}
+            Исходный урок останется в истории со статусом «Перенесён».
+          </DialogDescription>
         </DialogHeader>
         <form
           className="space-y-4"

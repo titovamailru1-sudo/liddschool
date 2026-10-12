@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListFilter, Plus, X } from "lucide-react";
 import { SearchableSelect } from "@/components/searchable-select";
 import { CreateLessonSheet, type CreateLessonDefaults } from "@/components/lessons/create-lesson-sheet";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,13 @@ import {
 import { formatDayMonth, formatLocalDate, monthName, weekdayShort } from "@/domain/format";
 import { LESSON_STATUS, type LessonDisplayStatus } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/use-mobile";
 import type { CalendarLesson, LessonDetail, LessonFormOptions } from "@/server/lessons/queries";
+import { Agenda, DayStrip } from "./agenda";
 import { LessonList } from "./lesson-list";
 import { LessonSheet } from "./lesson-sheet";
 import { MonthGrid } from "./month-grid";
+import { MoveDialog } from "./move-dialog";
 import { TimeGrid, type GridColumn } from "./time-grid";
 import { useUrlState } from "./url";
 
@@ -48,6 +51,13 @@ export interface LessonsViewProps {
   perms: { canCreate: boolean; canMark: boolean; canManage: boolean };
   filters: { teacher?: string; subject?: string; client?: string; group?: string; status?: string };
   createOpen: boolean;
+  mobileHint: boolean; // по User-Agent — чтобы телефон сразу получил мобильную разметку
+}
+
+function daysOf(from: LocalDate, to: LocalDate) {
+  const out: LocalDate[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
+  return out;
 }
 
 export function LessonsView(p: LessonsViewProps) {
@@ -57,6 +67,10 @@ export function LessonsView(p: LessonsViewProps) {
     defaults: { date: p.date >= p.today ? p.date : p.today },
   });
   const isTeacher = p.role === "TEACHER";
+  const mobile = useIsMobile(p.mobileHint);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Перетаскивание урока в сетке открывает диалог переноса с новыми датой, временем и педагогом.
+  const [drop, setDrop] = useState<{ lesson: CalendarLesson; date: LocalDate; time: string; teacherId: string } | null>(null);
   const openLesson = (l: { id: string }) => set({ lesson: l.id });
   const openCreate = (defaults: Partial<CreateLessonDefaults> = {}) =>
     setCreate({ open: true, defaults: { date: p.date >= p.today ? p.date : p.today, teacherId: p.filters.teacher, ...defaults } });
@@ -108,7 +122,7 @@ export function LessonsView(p: LessonsViewProps) {
     <div className="space-y-4">
       {/* Вид и навигация по датам */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border bg-surface p-0.5" role="tablist" aria-label="Вид календаря">
+        <div className="flex w-full rounded-lg border bg-surface p-0.5 md:w-auto" role="tablist" aria-label="Вид календаря">
           {VIEWS.map((v) => (
             <button
               key={v.key}
@@ -116,7 +130,7 @@ export function LessonsView(p: LessonsViewProps) {
               aria-selected={p.view === v.key}
               onClick={() => set({ view: v.key })}
               className={cn(
-                "h-8 rounded-md px-3 text-sm font-medium text-text-secondary hover:text-text-primary",
+                "h-8 flex-1 rounded-md px-3 text-sm font-medium text-text-secondary hover:text-text-primary md:flex-none",
                 p.view === v.key && "bg-brand-soft text-brand-text",
               )}
             >
@@ -135,11 +149,11 @@ export function LessonsView(p: LessonsViewProps) {
             <ChevronRight />
           </Button>
         </div>
-        <h2 className="text-base font-semibold">{title}</h2>
+        <h2 className="text-base font-semibold max-md:order-first max-md:w-full">{title}</h2>
         <Input
           type="date"
           aria-label="Перейти к дате"
-          className="h-8 w-36"
+          className="hidden h-8 w-36 md:block"
           value={p.date}
           onChange={(e) => e.target.value && set({ date: e.target.value })}
         />
@@ -148,10 +162,20 @@ export function LessonsView(p: LessonsViewProps) {
             <Plus /> Урок
           </Button>
         )}
+        {mobile && (
+          <Button
+            variant="outline"
+            className={cn("h-8", !p.perms.canCreate && "ml-auto", hasFilters && "border-brand text-brand-text")}
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((o) => !o)}
+          >
+            <ListFilter /> Фильтры
+          </Button>
+        )}
       </div>
 
-      {/* Фильтры */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Фильтры (на телефоне — по кнопке) */}
+      <div className={cn("flex flex-wrap items-center gap-2", mobile && !filtersOpen && "hidden", mobile && "[&>*]:max-md:w-[calc(50%-4px)]")}>
         {!isTeacher && (
           <FilterSelect
             label="Педагог"
@@ -197,12 +221,30 @@ export function LessonsView(p: LessonsViewProps) {
         )}
       </div>
 
-      {p.view === "day" || p.view === "week" ? (
+      {mobile ? (
+        <div className="space-y-3">
+          {p.view === "day" && <DayStrip date={p.date} today={p.today} onPick={(d) => set({ date: d })} />}
+          <Agenda
+            lessons={p.lessons}
+            days={p.view === "day" ? [p.date] : daysOf(p.range.from, p.range.to)}
+            nowIso={p.nowIso}
+            showTeacher={!isTeacher}
+            onLessonClick={openLesson}
+            onSwipe={(dir) => set({ date: shiftView(p.view === "list" ? "month" : p.view, p.date, dir) })}
+            empty={hasFilters ? "По выбранным фильтрам уроков нет." : p.view === "day" ? "В этот день уроков нет." : "Уроков нет."}
+          />
+        </div>
+      ) : p.view === "day" || p.view === "week" ? (
         <TimeGrid
           columns={columns}
           nowIso={p.nowIso}
           showTeacher={p.view === "week" && !isTeacher}
           onLessonClick={openLesson}
+          onLessonDrop={
+            p.perms.canManage
+              ? (l, c, time) => setDrop({ lesson: l, date: c.date, time, teacherId: c.teacherId ?? l.teacherId })
+              : undefined
+          }
           onSlotClick={
             p.perms.canCreate ? (c, time) => openCreate({ date: c.date, time, teacherId: c.teacherId ?? p.filters.teacher }) : undefined
           }
@@ -232,6 +274,17 @@ export function LessonsView(p: LessonsViewProps) {
         </div>
       )}
 
+      {drop && (
+        <MoveDialog
+          key={`${drop.lesson.id}-${drop.date}-${drop.time}-${drop.teacherId}`}
+          open
+          onOpenChange={(o) => !o && setDrop(null)}
+          lesson={{ id: drop.lesson.id, startsAt: drop.lesson.startsAt, teacher: { id: drop.lesson.teacherId } }}
+          initial={{ date: drop.date, time: drop.time, teacherId: drop.teacherId }}
+          title={drop.lesson.title}
+          teachers={p.options.teachers}
+        />
+      )}
       <LessonSheet
         lesson={p.detail}
         perms={{ canMark: p.perms.canMark, canManage: p.perms.canManage }}

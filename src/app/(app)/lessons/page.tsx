@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import { PageHeader } from "@/components/layout/page-header";
 import { localDateOf, parseLocalDate, viewRange, type CalendarView } from "@/domain/calendar";
 import { formatRub } from "@/domain/format";
 import { can } from "@/lib/access";
+import { isMobileUserAgent } from "@/lib/device";
 import { LESSON_STATUS, type LessonDisplayStatus } from "@/lib/status";
 import { now } from "@/server/clock";
 import { prisma } from "@/server/db";
@@ -95,6 +97,7 @@ export default async function LessonsPage({ searchParams }: { searchParams: Prom
         }}
         filters={filters}
         createOpen={sp.create === "1"}
+        mobileHint={isMobileUserAgent((await headers()).get("user-agent"))}
       />
     </>
   );

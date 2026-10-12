@@ -22,6 +22,12 @@ const HOUR_PX = 56;
 const DEFAULT_FROM = 9;
 const DEFAULT_TO = 23;
 
+/** Время по позиции в колонке: шаг 15 минут. */
+function timeAt(fromHour: number, offsetPx: number) {
+  const minutes = Math.max(0, fromHour * 60 + Math.round((offsetPx / HOUR_PX) * 4) * 15);
+  return `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
 /** Минуты от полуночи по поясу школы. */
 function minutesOf(iso: string) {
   const [h, m] = formatTime(new Date(iso)).split(":").map(Number);
@@ -31,17 +37,20 @@ function minutesOf(iso: string) {
 /**
  * Сетка «время × колонки» для видов «День» (колонки — педагоги) и «Неделя» (колонки — дни).
  * Клик по пустому месту открывает создание урока с подставленными временем и колонкой.
+ * Запланированный урок можно перетащить в другое время или колонку — откроется перенос.
  */
 export function TimeGrid({
   columns,
   onLessonClick,
   onSlotClick,
+  onLessonDrop,
   showTeacher,
   nowIso,
 }: {
   columns: GridColumn[];
   onLessonClick: (lesson: CalendarLesson) => void;
   onSlotClick?: (column: GridColumn, time: string) => void;
+  onLessonDrop?: (lesson: CalendarLesson, column: GridColumn, time: string) => void;
   showTeacher?: boolean;
   nowIso: string;
 }) {
@@ -67,6 +76,16 @@ export function TimeGrid({
 
   // При открытии — прокрутить страницу к текущему часу (один раз).
   const nowRef = useRef<HTMLDivElement>(null);
+  // Что тащим и где взяли (сдвиг курсора от верха карточки), куда покажем «тень».
+  const drag = useRef<{ lesson: CalendarLesson; grabPx: number } | null>(null);
+  const [ghost, setGhost] = useState<{ column: string; top: number; height: number; time: string } | null>(null);
+  const dropPoint = (e: React.DragEvent<HTMLDivElement>) => {
+    const d = drag.current!;
+    const top = e.clientY - e.currentTarget.getBoundingClientRect().top - d.grabPx;
+    const time = timeAt(fromHour, top);
+    const [hh, mm] = time.split(":").map(Number);
+    return { time, top: ((hh * 60 + mm - fromHour * 60) / 60) * HOUR_PX };
+  };
   useEffect(() => {
     nowRef.current?.scrollIntoView({ block: "center" });
   }, []);
@@ -118,6 +137,7 @@ export function TimeGrid({
               <div
                 key={c.key}
                 className={cn("relative min-w-[120px] flex-1 border-l", onSlotClick && "cursor-cell")}
+                data-column={c.key}
                 onClick={(e) => {
                   if (!onSlotClick) return;
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -126,6 +146,24 @@ export function TimeGrid({
                   const mm = String(minutes % 60).padStart(2, "0");
                   onSlotClick(c, `${hh}:${mm}`);
                 }}
+                onDragOver={(e) => {
+                  if (!drag.current) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  const { time, top } = dropPoint(e);
+                  const height = Math.max((drag.current.lesson.durationMin / 60) * HOUR_PX - 2, 22);
+                  if (ghost?.column !== c.key || ghost.time !== time) setGhost({ column: c.key, top, height, time });
+                }}
+                onDrop={(e) => {
+                  const d = drag.current;
+                  if (!d) return;
+                  e.preventDefault();
+                  const { time } = dropPoint(e);
+                  drag.current = null;
+                  setGhost(null);
+                  const same = c.date === localDateOf(new Date(d.lesson.startsAt)) && time === formatTime(new Date(d.lesson.startsAt)) && (!c.teacherId || c.teacherId === d.lesson.teacherId);
+                  if (!same) onLessonDrop?.(d.lesson, c, time);
+                }}
               >
                 {hours.map((h) => (
                   <div key={h} className="border-b border-dashed border-border/70" style={{ height: HOUR_PX }} />
@@ -133,14 +171,32 @@ export function TimeGrid({
                 {showNow && c.date === today && (
                   <div className="pointer-events-none absolute inset-x-0 z-[6] -translate-y-px border-t-2 border-danger" style={{ top: nowTop }} />
                 )}
+                {ghost?.column === c.key && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0.5 z-[5] flex items-start rounded-md border-2 border-dashed border-brand bg-brand-soft/70 px-1.5 py-1 text-xs font-semibold text-brand-text tabular-nums"
+                    style={{ top: ghost.top + 1, height: ghost.height }}
+                  >
+                    {ghost.time}
+                  </div>
+                )}
                 {laid.map(({ item, lane, lanes }) => {
                   const top = ((minutesOf(item.startsAt) - fromHour * 60) / 60) * HOUR_PX;
                   const h = Math.max((item.durationMin / 60) * HOUR_PX - 2, 22);
                   return (
                     <div
                       key={item.id}
-                      className="absolute px-0.5"
+                      className={cn("absolute px-0.5", onLessonDrop && item.status === "planned" && "cursor-grab active:cursor-grabbing")}
                       style={{ top: top + 1, height: h, left: `${(lane / lanes) * 100}%`, width: `${100 / lanes}%` }}
+                      draggable={!!onLessonDrop && item.status === "planned"}
+                      onDragStart={(e) => {
+                        drag.current = { lesson: item, grabPx: e.clientY - e.currentTarget.getBoundingClientRect().top };
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", item.id);
+                      }}
+                      onDragEnd={() => {
+                        drag.current = null;
+                        setGhost(null);
+                      }}
                     >
                       <LessonBlock
                         lesson={item}
