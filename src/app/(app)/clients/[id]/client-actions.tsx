@@ -109,6 +109,7 @@ export function ClientActions({
           phone: card.phone,
           program: card.program,
           paymentMode: card.paymentMode,
+          tariffId: card.tariffId,
           status: card.status,
           goal: card.goal,
           source: card.source,

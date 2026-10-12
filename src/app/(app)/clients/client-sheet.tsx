@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Loader2Icon, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { formatLocalDate, formatRub } from "@/domain/format";
 import { studentNameGenitive } from "@/domain/names";
+import type { ClientTariffOption } from "@/server/billing/tariffs";
+import { clientTariffOptionsAction } from "../subscriptions/tariffs/actions";
 import { saveClientAction, type ClientPayload } from "./actions";
 
 export interface ClientFormValues {
@@ -23,6 +26,7 @@ export interface ClientFormValues {
   phone: string | null;
   program: "EXAM" | "SCHOOL";
   paymentMode: "MONTHLY" | "PER_LESSON";
+  tariffId: string | null; // свой тариф; null — тариф школы
   status: "ACTIVE" | "PAUSED" | "ARCHIVED";
   goal: string | null;
   source: "SITE" | "AVITO" | "VK" | "REFERRAL" | "OTHER" | null;
@@ -39,6 +43,7 @@ export const EMPTY_CLIENT: ClientFormValues = {
   phone: null,
   program: "EXAM",
   paymentMode: "MONTHLY",
+  tariffId: null,
   status: "ACTIVE",
   goal: null,
   source: null,
@@ -82,6 +87,18 @@ function ClientForm({ initial, onDone }: { initial: ClientFormValues; onDone: ()
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const set = <K extends keyof ClientFormValues>(k: K, value: ClientFormValues[K]) => setV((x) => ({ ...x, [k]: value }));
+  const [tariffs, setTariffs] = useState<ClientTariffOption[] | null>(null);
+  useEffect(() => {
+    clientTariffOptionsAction().then(setTariffs, () => setTariffs([]));
+  }, []);
+  // Свой тариф должен подходить по программе и способу оплаты — при их смене выбор сбрасывается на тариф школы.
+  const fitting = (tariffs ?? []).filter((t) => t.program === v.program && t.paymentMode === v.paymentMode);
+  const setPlan = (patch: Partial<Pick<ClientFormValues, "program" | "paymentMode">>) =>
+    setV((x) => {
+      const next = { ...x, ...patch };
+      const keep = (tariffs ?? []).some((t) => t.id === x.tariffId && t.program === next.program && t.paymentMode === next.paymentMode);
+      return { ...next, tariffId: keep ? x.tariffId : null };
+    });
   const autoGen = v.fullName.trim().split(/\s+/).length >= 2 ? studentNameGenitive(v.fullName, v.gender) : "";
 
   function submit() {
@@ -142,7 +159,7 @@ function ClientForm({ initial, onDone }: { initial: ClientFormValues; onDone: ()
         </F>
         <div className="grid grid-cols-2 gap-3">
           <F label="Программа" id="c-program">
-            <Select value={v.program} onValueChange={(x) => set("program", x as "EXAM")}>
+            <Select value={v.program} onValueChange={(x) => setPlan({ program: x as "EXAM" })}>
               <SelectTrigger id="c-program" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -153,7 +170,7 @@ function ClientForm({ initial, onDone }: { initial: ClientFormValues; onDone: ()
             </Select>
           </F>
           <F label="Оплата" id="c-mode">
-            <Select value={v.paymentMode} onValueChange={(x) => set("paymentMode", x as "MONTHLY")}>
+            <Select value={v.paymentMode} onValueChange={(x) => setPlan({ paymentMode: x as "MONTHLY" })}>
               <SelectTrigger id="c-mode" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -164,6 +181,28 @@ function ClientForm({ initial, onDone }: { initial: ClientFormValues; onDone: ()
             </Select>
           </F>
         </div>
+        <F label="Тариф" id="c-tariff">
+          <Select value={v.tariffId ?? "school"} onValueChange={(x) => set("tariffId", x === "school" ? null : x)} disabled={!tariffs}>
+            <SelectTrigger id="c-tariff" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="school">Тариф школы</SelectItem>
+              {fitting.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                  {t.pricePerHour !== null && ` — ${formatRub(t.pricePerHour)}/ч`}
+                  {t.from && ` с ${formatLocalDate(t.from)}`}
+                </SelectItem>
+              ))}
+              {/* Выбранный тариф ещё не загрузился — показываем его, чтобы поле не было пустым. */}
+              {v.tariffId && !fitting.some((t) => t.id === v.tariffId) && <SelectItem value={v.tariffId}>Свой тариф</SelectItem>}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-text-secondary">
+            Для индивидуальных уроков. {fitting.length === 0 && tariffs ? "Своих тарифов для этой программы и оплаты нет — их создаёт владелец в «Абонементы → Тарифы»." : "Групповые уроки — по тарифу школы."}
+          </p>
+        </F>
         <div className="grid grid-cols-2 gap-3">
           <F label="Школа" id="c-school">
             <Input id="c-school" value={v.school ?? ""} onChange={(e) => set("school", e.target.value || null)} />

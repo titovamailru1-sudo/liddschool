@@ -1,8 +1,10 @@
 import { addDays, firstOfMonth, lastOfMonth, localDateOf, nextMonth, parseLocalDate } from "@/domain/calendar";
+import Link from "next/link";
+import { Tags } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { Button } from "@/components/ui/button";
 import { loadSettings } from "@/server/billing/settings";
 import { invoicesForMonth } from "@/server/billing/queries";
-import { loadTariffs } from "@/server/lessons/context";
 import { now } from "@/server/clock";
 import { prisma } from "@/server/db";
 import { requirePermission } from "@/server/session";
@@ -23,17 +25,20 @@ export default async function SubscriptionsPage({ searchParams }: { searchParams
     const [y, m] = sp.month.split("-").map(Number);
     if (m >= 1 && m <= 12) target = { year: y, month: m };
   }
-  const [data, tariffs] = await Promise.all([invoicesForMonth(target.year, target.month), loadTariffs(prisma)]);
-  const current = tariffs
-    .filter((x) => x.validFrom <= today)
-    .sort((a, b) => b.validFrom.localeCompare(a.validFrom))
-    .filter((x, i, arr) => arr.findIndex((y) => y.kind === x.kind && y.program === x.program && y.paymentMode === x.paymentMode) === i);
+  const data = await invoicesForMonth(target.year, target.month);
 
   return (
     <>
       <PageHeader
         title="Абонементы на месяц"
         description={`Счета формируются ${settings.invoiceDay}-го числа на следующий месяц, оплата до ${String(settings.invoiceDueDay).padStart(2, "0")}-го. Родителям — только после проверки.`}
+        actions={
+          <Button variant="outline" asChild>
+            <Link href="/subscriptions/tariffs">
+              <Tags /> Тарифы
+            </Link>
+          </Button>
+        }
       />
       <SubscriptionsView
         year={target.year}
@@ -42,7 +47,6 @@ export default async function SubscriptionsPage({ searchParams }: { searchParams
         prevMonth={addDays(firstOfMonth(target.year, target.month), -1).slice(0, 7)}
         nextMonth={addDays(lastOfMonth(target.year, target.month), 1).slice(0, 7)}
         data={data}
-        tariffs={current}
       />
     </>
   );

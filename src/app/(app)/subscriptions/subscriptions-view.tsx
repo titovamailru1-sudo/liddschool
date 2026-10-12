@@ -12,8 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatRub, monthName } from "@/domain/format";
-import type { TariffRow } from "@/domain/pricing";
-import { PROGRAM_LABEL, PAYMENT_MODE_LABEL } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { MonthInvoices } from "@/server/billing/queries";
 import { deleteDraftAction, generateDraftsAction, issueInvoicesAction, rebuildDraftAction, retryMessageAction } from "./actions";
@@ -27,7 +25,6 @@ export function SubscriptionsView({
   prevMonth,
   nextMonth,
   data,
-  tariffs,
 }: {
   year: number;
   month: number;
@@ -35,7 +32,6 @@ export function SubscriptionsView({
   prevMonth: string;
   nextMonth: string;
   data: MonthInvoices;
-  tariffs: TariffRow[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -204,21 +200,6 @@ export function SubscriptionsView({
         </div>
       )}
 
-      <details className="rounded-lg border bg-surface p-4 text-sm">
-        <summary className="cursor-pointer font-medium">Тарифы (₽ за урок-час)</summary>
-        <table className="mt-3 w-full max-w-lg">
-          <tbody>
-            {tariffs.map((t) => (
-              <tr key={`${t.kind}${t.program}${t.paymentMode}`} className="border-t">
-                <td className="py-1.5">{t.kind === "GROUP" ? "Группа" : "Индивидуально"}</td>
-                <td className="py-1.5">{PROGRAM_LABEL[t.program]}</td>
-                <td className="py-1.5">{PAYMENT_MODE_LABEL[t.paymentMode]}</td>
-                <td className="py-1.5 text-right tabular-nums">{formatRub(t.pricePerHour)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
 
       <PreviewDialog invoice={preview} onClose={() => setPreview(null)} year={year} month={month} />
       <PaymentDialog open={!!payFor} onOpenChange={(o) => !o && setPayFor(null)} target={payFor} today={today} />

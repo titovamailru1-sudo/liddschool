@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidateBilling, runAction, type Result } from "@/server/action-result";
 import { prisma } from "@/server/db";
+import { checkClientTariff } from "@/server/billing/tariffs";
 import { DomainError } from "@/server/errors";
 import { createTelegramInvite } from "@/server/messaging/outbox";
 import { requirePermission } from "@/server/session";
@@ -28,6 +29,7 @@ const clientSchema = z.object({
   phone: z.string().trim().max(30).nullish(),
   program: z.enum(["EXAM", "SCHOOL"]),
   paymentMode: z.enum(["MONTHLY", "PER_LESSON"]),
+  tariffId: z.string().min(1).nullish(), // свой тариф; пусто — тариф школы
   status: z.enum(["ACTIVE", "PAUSED", "ARCHIVED"]).default("ACTIVE"),
   goal: z.string().trim().max(500).nullish(),
   source: z.enum(["SITE", "AVITO", "VK", "REFERRAL", "OTHER"]).nullable(),
@@ -53,6 +55,7 @@ export async function saveClientAction(clientId: string | null, payload: ClientP
   const user = await requirePermission(clientId ? "clients.edit" : "clients.create");
   return runAction(async () => {
     const p = clientSchema.parse(payload);
+    if (p.tariffId) await checkClientTariff(prisma, p.tariffId, p.program, p.paymentMode);
     const data = {
       fullName: p.fullName,
       gender: p.gender,
@@ -62,6 +65,7 @@ export async function saveClientAction(clientId: string | null, payload: ClientP
       phone: empty(p.phone),
       program: p.program,
       paymentMode: p.paymentMode,
+      tariffId: p.tariffId ?? null,
       status: p.status,
       goal: empty(p.goal),
       source: p.source,

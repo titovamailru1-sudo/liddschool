@@ -60,7 +60,7 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
       </Link>
       <PageHeader
         title={card.fullName}
-        description={[card.grade ? `${card.grade} класс` : null, PROGRAM_LABEL[card.program], PAYMENT_MODE_LABEL[card.paymentMode], card.status === "PAUSED" ? "на паузе" : card.status === "ARCHIVED" ? "в архиве" : null]
+        description={[card.grade ? `${card.grade} класс` : null, PROGRAM_LABEL[card.program], PAYMENT_MODE_LABEL[card.paymentMode], card.tariffName && `тариф «${card.tariffName}»`, card.status === "PAUSED" ? "на паузе" : card.status === "ARCHIVED" ? "в архиве" : null]
           .filter(Boolean)
           .join(" · ")}
         actions={

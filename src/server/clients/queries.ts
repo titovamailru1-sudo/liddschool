@@ -107,6 +107,7 @@ export async function clientCard(user: CurrentUser, id: string, now: Date) {
   const c = await prisma.client.findFirst({
     where: { id, ...scope(user) },
     include: {
+      tariff: { select: { name: true } },
       parents: { orderBy: { isPrimary: "desc" } },
       series: {
         orderBy: [{ endsOn: { sort: "asc", nulls: "first" } }, { weekday: "asc" }],
@@ -182,6 +183,9 @@ export async function clientCard(user: CurrentUser, id: string, now: Date) {
     grade: c.grade,
     program: c.program,
     paymentMode: c.paymentMode,
+    // Свой тариф ученика — только сотрудникам школы.
+    tariffId: staff ? c.tariffId : null,
+    tariffName: staff ? (c.tariff?.name ?? null) : null,
     status: c.status,
     goal: c.goal,
     gender: c.gender,
