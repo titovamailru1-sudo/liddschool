@@ -3,7 +3,7 @@ import { coverage, perLessonActions, renderLessonPaymentMessage } from "@/domain
 import { localDateOf } from "@/domain/calendar";
 import { formatDayMonth, formatTime } from "@/domain/format";
 import { greetingName, studentNameGenitive } from "@/domain/names";
-import { lessonHours, lessonPrice, tariffOn, type TariffRow } from "@/domain/pricing";
+import { lessonHours, lessonPrice, rateFor, type TariffRow } from "@/domain/pricing";
 import { loadTariffs, type Db } from "../lessons/context";
 import { queueMessage } from "../messaging/outbox";
 import { clientBalance, clientLessons, type ClientLesson } from "./clientLessons";
@@ -12,23 +12,24 @@ import { closeAutoTask, ensureAutoTask } from "./tasks";
 
 const HORIZON_DAYS = 14; // на сколько вперёд распределяем баланс по урокам
 
-function priceOf(tariffs: TariffRow[], l: ClientLesson) {
-  const rate = tariffOn(
+function priceOf(tariffs: TariffRow[], l: ClientLesson, clientTariffId: string | null) {
+  const rate = rateFor(
     tariffs,
     { kind: l.isGroup ? "GROUP" : "INDIVIDUAL", program: l.program, paymentMode: "PER_LESSON" },
     localDateOf(l.startsAt),
-  ).pricePerHour;
+    l.isGroup ? null : clientTariffId,
+  );
   return lessonPrice(lessonHours(l.durationMin), rate);
 }
 
-async function upcomingFor(db: Db, clientId: string, now: Date, tariffs: TariffRow[]) {
+async function upcomingFor(db: Db, clientId: string, now: Date, tariffs: TariffRow[], clientTariffId: string | null) {
   const lessons = await clientLessons(
     db,
     clientId,
     { gte: now, lt: new Date(now.getTime() + HORIZON_DAYS * 86_400_000) },
     { status: "PLANNED", isTrial: false },
   );
-  return lessons.map((l) => ({ lesson: l, price: priceOf(tariffs, l) }));
+  return lessons.map((l) => ({ lesson: l, price: priceOf(tariffs, l, clientTariffId) }));
 }
 
 const taskKey = (lessonId: string, clientId: string) => `lesson-unpaid:${lessonId}:${clientId}`;
@@ -44,7 +45,7 @@ export async function processClientPerLesson(db: Db, clientId: string, now: Date
     include: { parents: { orderBy: [{ isPrimary: "desc" }, { fullName: "asc" }], take: 1 } },
   });
   if (!client) return { links: 0, atRisk: 0 };
-  const upcoming = await upcomingFor(db, clientId, now, tariffs);
+  const upcoming = await upcomingFor(db, clientId, now, tariffs, client.tariffId);
   const balance = await clientBalance(db, clientId);
   const covered = coverage(
     balance,

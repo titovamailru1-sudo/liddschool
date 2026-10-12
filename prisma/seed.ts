@@ -2,7 +2,7 @@
  * Сид-данные для разработки. Полностью очищает базу и заполняет заново.
  * Запуск: npm run db:seed (пароль пользователей — SEED_PASSWORD из .env).
  */
-import { PrismaClient, type Gender, type PaymentMode, type Prisma, type Program } from "@prisma/client";
+import { PrismaClient, type Gender, type PaymentMode, type Program, type TariffKind } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { firstOfMonth, fromDbDate, localDateOf, nextMonth, parseLocalDate, toDbDate } from "../src/domain/calendar";
 import { occurrencesInMonth, type SeriesInput } from "../src/domain/schedule";
@@ -14,6 +14,7 @@ import { addExpense } from "../src/server/expenses";
 import { addLeadTouch, createLead, scheduleTrial, setLeadStage } from "../src/server/leads/service";
 import { createTask } from "../src/server/tasks/service";
 import { addDays } from "../src/domain/calendar";
+import { defaultTariffName } from "../src/domain/pricing";
 
 const prisma = new PrismaClient();
 
@@ -218,7 +219,7 @@ async function main() {
   }
 
   // ── Тарифы (₽ за урок-час) ──
-  const tariffs: Omit<Prisma.TariffCreateManyInput, "validFrom">[] = [
+  const tariffs: { kind: TariffKind; program: Program; paymentMode: PaymentMode; pricePerHour: number }[] = [
       { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "MONTHLY", pricePerHour: 1500 },
       { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "PER_LESSON", pricePerHour: 1700 },
       { kind: "INDIVIDUAL", program: "SCHOOL", paymentMode: "MONTHLY", pricePerHour: 1300 },
@@ -229,8 +230,25 @@ async function main() {
       { kind: "GROUP", program: "SCHOOL", paymentMode: "MONTHLY", pricePerHour: 800 },
       { kind: "GROUP", program: "SCHOOL", paymentMode: "PER_LESSON", pricePerHour: 1000 },
   ];
-  await prisma.tariff.createMany({
-    data: tariffs.map((t) => ({ ...t, validFrom: toDbDate(TARIFFS_FROM) })),
+  for (const { pricePerHour, ...key } of tariffs) {
+    await prisma.tariff.create({
+      data: {
+        ...key,
+        name: defaultTariffName(key),
+        isDefault: true,
+        prices: { create: { pricePerHour, validFrom: toDbDate(TARIFFS_FROM) } },
+      },
+    });
+  }
+  // Пример своего тарифа — назначается ученику в карточке.
+  await prisma.tariff.create({
+    data: {
+      name: "Льготный ЕГЭ",
+      kind: "INDIVIDUAL",
+      program: "EXAM",
+      paymentMode: "MONTHLY",
+      prices: { create: { pricePerHour: 1300, validFrom: toDbDate(TARIFFS_FROM) } },
+    },
   });
 
   // ── Шаблон ставки школы ──

@@ -37,7 +37,8 @@ export const PERMISSIONS = {
   "finance.payroll": OWNER,
   "finance.reports": OWNER,
   "finance.myEarnings": ["TEACHER"],
-  "subscriptions.view": STAFF, // счета абонементов: формирование, проверка, отправка
+  "subscriptions.view": STAFF, // счета абонементов: формирование, проверка, отправка; список тарифов
+  "tariffs.manage": OWNER, // создание, изменение, цены и удаление тарифов
   "leads.view": STAFF,
   "leads.create": STAFF,
   "settings.manage": OWNER,

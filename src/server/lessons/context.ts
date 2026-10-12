@@ -11,21 +11,25 @@ import {
 } from "@/domain/calendar";
 import type { PaymentMode } from "@/domain/constants";
 import type { RatePlanInput } from "@/domain/payroll";
-import { tariffOn, type TariffRow } from "@/domain/pricing";
+import { rateFor, type TariffRow } from "@/domain/pricing";
 import type { SettlementStudent } from "@/domain/lessonSettlement";
 import { DomainError } from "../errors";
 
 /** Клиент БД или транзакция — сервисы работают с обоими. */
 export type Db = PrismaClient | Prisma.TransactionClient;
 
+/** Все цены всех тарифов (история по датам) — для расчёта цены на дату урока. */
 export async function loadTariffs(db: Db): Promise<TariffRow[]> {
-  const rows = await db.tariff.findMany();
-  return rows.map((t) => ({
-    kind: t.kind,
-    program: t.program,
-    paymentMode: t.paymentMode,
-    pricePerHour: t.pricePerHour,
-    validFrom: fromDbDate(t.validFrom),
+  const rows = await db.tariffPrice.findMany({ include: { tariff: true } });
+  return rows.map((p) => ({
+    tariffId: p.tariffId,
+    name: p.tariff.name,
+    isDefault: p.tariff.isDefault,
+    kind: p.tariff.kind,
+    program: p.tariff.program,
+    paymentMode: p.tariff.paymentMode,
+    pricePerHour: p.pricePerHour,
+    validFrom: fromDbDate(p.validFrom),
   }));
 }
 
@@ -89,11 +93,11 @@ export async function loadLessonStudents(
   const allTariffs = tariffs ?? (await loadTariffs(db));
   const on = localDateOf(lesson.startsAt);
 
-  let clients: { id: string; fullName: string; paymentMode: PaymentMode }[] = [];
+  let clients: { id: string; fullName: string; paymentMode: PaymentMode; tariffId: string | null }[] = [];
   if (lesson.clientId) {
     const c = await db.client.findUniqueOrThrow({
       where: { id: lesson.clientId },
-      select: { id: true, fullName: true, paymentMode: true },
+      select: { id: true, fullName: true, paymentMode: true, tariffId: true },
     });
     clients = [c];
   } else if (lesson.groupId) {
@@ -103,11 +107,11 @@ export async function loadLessonStudents(
         joinedAt: { lt: startOfDay(addDays(on, 1)) }, // вступил в любой момент дня урока
         OR: [{ leftAt: null }, { leftAt: { gt: lesson.startsAt } }],
       },
-      select: { client: { select: { id: true, fullName: true, paymentMode: true } } },
+      select: { client: { select: { id: true, fullName: true, paymentMode: true, tariffId: true } } },
     });
     const marked = await db.attendance.findMany({
       where: { lessonId: lesson.id },
-      select: { client: { select: { id: true, fullName: true, paymentMode: true } } },
+      select: { client: { select: { id: true, fullName: true, paymentMode: true, tariffId: true } } },
     });
     const byId = new Map([...members, ...marked].map((m) => [m.client.id, m.client]));
     clients = [...byId.values()].sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
@@ -118,6 +122,7 @@ export async function loadLessonStudents(
     clientId: c.id,
     fullName: c.fullName,
     paymentMode: c.paymentMode,
-    pricePerHour: tariffOn(allTariffs, { kind, program: lesson.program, paymentMode: c.paymentMode }, on).pricePerHour,
+    // Свой тариф ученика действует на индивидуальные уроки; групповые — по групповому тарифу школы.
+    pricePerHour: rateFor(allTariffs, { kind, program: lesson.program, paymentMode: c.paymentMode }, on, kind === "INDIVIDUAL" ? c.tariffId : null),
   }));
 }

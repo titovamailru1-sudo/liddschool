@@ -261,6 +261,9 @@ model Client {
   status      ClientStatus @default(ACTIVE)
   program     Program
   paymentMode PaymentMode
+  // Свой тариф ученика для индивидуальных уроков; пусто — тариф школы
+  tariffId    String?
+  tariff      Tariff?      @relation(fields: [tariffId], references: [id])
   goal        String?
   source      LeadSource?
   notes       String?
@@ -298,15 +301,34 @@ model Parent {
 
 // ─────────────────────────── Тарифы ───────────────────────────
 
+// Тариф: именованная цена за урок-час для сочетания формат × программа × способ оплаты.
+// Тариф школы (isDefault) — у каждого сочетания ровно один, его получают ученики без своего тарифа.
+// Цена меняется новой записью TariffPrice с датой начала — прошлые уроки и счета не пересчитываются.
 model Tariff {
-  id           String      @id @default(cuid())
-  kind         TariffKind  @default(INDIVIDUAL)
-  program      Program
-  paymentMode  PaymentMode
-  pricePerHour Int // индивидуально 1500 / 1700 / 1300 / 1500; группа 800–1000
-  validFrom    DateTime    @db.Date
+  id          String      @id @default(cuid())
+  name        String
+  kind        TariffKind  @default(INDIVIDUAL)
+  program     Program
+  paymentMode PaymentMode
+  isDefault   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
 
-  @@unique([kind, program, paymentMode, validFrom])
+  prices  TariffPrice[]
+  clients Client[]
+
+  @@index([kind, program, paymentMode])
+}
+
+model TariffPrice {
+  id           String   @id @default(cuid())
+  tariffId     String
+  tariff       Tariff   @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+  pricePerHour Int
+  validFrom    DateTime @db.Date
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  @@unique([tariffId, validFrom])
 }
 
 // ─────────────────────────── Расписание ───────────────────────────

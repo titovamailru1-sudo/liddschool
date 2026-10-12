@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lessonHours, lessonPrice, tariffOn, type TariffRow } from "./pricing";
+import { defaultTariffName, lessonHours, lessonPrice, rateFor, tariffOn, type TariffRow } from "./pricing";
 
 describe("lessonHours", () => {
   it.each([
@@ -20,16 +20,30 @@ describe("lessonPrice", () => {
   it("групповой 1,5 ч × 900 = 1 350", () => expect(lessonPrice(1.5, 900)).toBe(1350));
 });
 
-describe("tariffOn", () => {
+describe("тарифы", () => {
+  const row = (over: Partial<TariffRow>): TariffRow => ({
+    tariffId: "exam-m",
+    name: "ОГЭ/ЕГЭ · индивидуально · абонемент",
+    isDefault: true,
+    kind: "INDIVIDUAL",
+    program: "EXAM",
+    paymentMode: "MONTHLY",
+    pricePerHour: 1500,
+    validFrom: "2026-09-01",
+    ...over,
+  });
   const tariffs: TariffRow[] = [
-    { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "MONTHLY", pricePerHour: 1400, validFrom: "2026-01-01" },
-    { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "MONTHLY", pricePerHour: 1500, validFrom: "2026-09-01" },
-    { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "PER_LESSON", pricePerHour: 1700, validFrom: "2026-09-01" },
-    { kind: "GROUP", program: "EXAM", paymentMode: "MONTHLY", pricePerHour: 900, validFrom: "2026-09-01" },
+    row({ pricePerHour: 1400, validFrom: "2026-01-01" }),
+    row({}),
+    row({ tariffId: "exam-p", paymentMode: "PER_LESSON", pricePerHour: 1700 }),
+    row({ tariffId: "grp", kind: "GROUP", pricePerHour: 900 }),
+    // Свой тариф ученика: «Льготный», 1 200 ₽ с 01.10, 1 250 ₽ с 01.12
+    row({ tariffId: "vip", name: "Льготный", isDefault: false, pricePerHour: 1200, validFrom: "2026-10-01" }),
+    row({ tariffId: "vip", name: "Льготный", isDefault: false, pricePerHour: 1250, validFrom: "2026-12-01" }),
   ];
   const key = { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "MONTHLY" } as const;
 
-  it("берёт последний тариф, начавший действовать к дате", () => {
+  it("тариф школы — последняя цена, начавшая действовать к дате", () => {
     expect(tariffOn(tariffs, key, "2026-11-01").pricePerHour).toBe(1500);
   });
 
@@ -38,12 +52,41 @@ describe("tariffOn", () => {
     expect(tariffOn(tariffs, key, "2026-08-31").pricePerHour).toBe(1400);
   });
 
-  it("групповой тариф отделён от индивидуального", () => {
+  it("групповой тариф отделён от индивидуального; свой тариф ученика не считается тарифом школы", () => {
     expect(tariffOn(tariffs, { ...key, kind: "GROUP" }, "2026-11-01").pricePerHour).toBe(900);
+    expect(tariffOn(tariffs, key, "2026-12-15").pricePerHour).toBe(1500);
   });
 
   it("нет тарифа на дату → ошибка", () => {
     expect(() => tariffOn(tariffs, key, "2025-12-31")).toThrow(/Нет тарифа/);
     expect(() => tariffOn(tariffs, { ...key, program: "SCHOOL" }, "2026-11-01")).toThrow();
+  });
+
+  it("свой тариф ученика: цена на дату урока, история цен", () => {
+    expect(rateFor(tariffs, key, "2026-11-10", "vip")).toBe(1200);
+    expect(rateFor(tariffs, key, "2026-12-10", "vip")).toBe(1250);
+  });
+
+  it("свой тариф ещё не действует на дату — цена школы", () => {
+    expect(rateFor(tariffs, key, "2026-09-15", "vip")).toBe(1500);
+  });
+
+  it("свой тариф не подходит по способу оплаты (сравнение с поурочной ценой) — цена школы", () => {
+    expect(rateFor(tariffs, { ...key, paymentMode: "PER_LESSON" }, "2026-11-10", "vip")).toBe(1700);
+    expect(rateFor(tariffs, { ...key, kind: "GROUP" }, "2026-11-10", "vip")).toBe(900);
+  });
+
+  it("свой тариф другой программы — цена школы", () => {
+    const school = [...tariffs, row({ tariffId: "s-m", program: "SCHOOL", pricePerHour: 1300 })];
+    expect(rateFor(school, { ...key, program: "SCHOOL" }, "2026-11-10", "vip")).toBe(1300);
+  });
+
+  it("defaultTariffName", () => {
+    expect(defaultTariffName(key)).toBe("ОГЭ/ЕГЭ · индивидуально · абонемент");
+    expect(defaultTariffName({ kind: "GROUP", program: "SCHOOL", paymentMode: "PER_LESSON" })).toBe("Школьная программа · группа · поурочно");
+  });
+
+  it("без своего тарифа — цена школы", () => {
+    expect(rateFor(tariffs, key, "2026-11-10", null)).toBe(1500);
   });
 });

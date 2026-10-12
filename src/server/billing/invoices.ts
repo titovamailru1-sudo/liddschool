@@ -18,7 +18,7 @@ import {
 } from "@/domain/calendar";
 import { calcMonthlyInvoice, renderInvoiceMessage } from "@/domain/monthlyInvoice";
 import { greetingName, studentNameGenitive } from "@/domain/names";
-import { lessonHours, lessonPrice, tariffOn, type TariffRow } from "@/domain/pricing";
+import { lessonHours, lessonPrice, rateFor, type TariffRow } from "@/domain/pricing";
 import { DomainError } from "../errors";
 import { loadTariffs, type Db } from "../lessons/context";
 import { queueMessage } from "../messaging/outbox";
@@ -35,12 +35,17 @@ function monthRange(year: number, month: number, from?: LocalDate) {
   return { gte: startOfDay(start), lt: startOfDay(addDays(lastOfMonth(year, month), 1)) };
 }
 
-function rates(tariffs: TariffRow[], l: Pick<ClientLesson, "isGroup" | "program" | "startsAt">) {
+/**
+ * Тарифы урока для счёта: абонемент — по тарифу ученика (для индивидуальных уроков) или тарифу школы;
+ * поурочная цена для сравнения — по тарифу школы, если у ученика нет своего поурочного.
+ */
+function rates(tariffs: TariffRow[], l: Pick<ClientLesson, "isGroup" | "program" | "startsAt">, clientTariffId: string | null) {
   const on = localDateOf(l.startsAt);
   const kind = l.isGroup ? "GROUP" : "INDIVIDUAL";
+  const own = l.isGroup ? null : clientTariffId;
   return {
-    monthlyRate: tariffOn(tariffs, { kind, program: l.program, paymentMode: "MONTHLY" }, on).pricePerHour,
-    perLessonRate: tariffOn(tariffs, { kind, program: l.program, paymentMode: "PER_LESSON" }, on).pricePerHour,
+    monthlyRate: rateFor(tariffs, { kind, program: l.program, paymentMode: "MONTHLY" }, on, own),
+    perLessonRate: rateFor(tariffs, { kind, program: l.program, paymentMode: "PER_LESSON" }, on, own),
   };
 }
 
@@ -65,6 +70,7 @@ async function pendingAdjustments(
   tariffs: TariffRow[],
   settings: SchoolSettings,
   currentInvoiceId: string | null,
+  clientTariffId: string | null,
 ) {
   const since = toDbDate(addDays(beforeMonth, -100));
   const invoices = await db.monthlyInvoice.findMany({
@@ -136,7 +142,7 @@ async function pendingAdjustments(
       if (l.createdAt <= inv.createdAt) continue; // не входил в счёт сознательно (например, до начала обучения)
       if (ancestors.get(l.id)!.some((a) => invoicedIds.has(a))) continue; // перенос оплаченного урока
       if (!isBillableExtra(toNode(l))) continue;
-      const amount = lessonPrice(lessonHours(l.durationMin), rates(tariffs, l).monthlyRate);
+      const amount = lessonPrice(lessonHours(l.durationMin), rates(tariffs, l, clientTariffId).monthlyRate);
       result.push({ lessonId: l.id, amount, reason: `доплата за урок ${formatShort(l.startsAt)}` });
     }
   }
@@ -195,11 +201,11 @@ export async function buildInvoiceDraft(
   );
   lessons = lessons.filter((l) => !ancestors.get(l.id)!.some((a) => paidOrigins.has(a)));
 
-  const adjustments = await pendingAdjustments(db, clientId, monthStart, tariffs, settings, existing?.id ?? null);
+  const adjustments = await pendingAdjustments(db, clientId, monthStart, tariffs, settings, existing?.id ?? null, client.tariffId);
   const adjustmentsTotal = adjustments.reduce((s, a) => s + a.amount, 0);
   if (!lessons.length && adjustmentsTotal === 0) return { ok: false, reason: "нет уроков в этом месяце" };
 
-  const invoiceLessons = lessons.map((l) => ({ startsAt: l.startsAt, durationMin: l.durationMin, ...rates(tariffs, l) }));
+  const invoiceLessons = lessons.map((l) => ({ startsAt: l.startsAt, durationMin: l.durationMin, ...rates(tariffs, l, client.tariffId) }));
   const balance = await clientBalance(db, clientId);
   const calc = calcMonthlyInvoice({
     year,

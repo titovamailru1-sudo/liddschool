@@ -1,5 +1,6 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type PaymentMode, type Program, type TariffKind } from "@prisma/client";
 import { toDbDate } from "@/domain/calendar";
+import { defaultTariffName } from "@/domain/pricing";
 
 /** Клиент тестовой базы (DATABASE_URL подменяется в vitest.config.mts). */
 export const testDb = new PrismaClient();
@@ -23,18 +24,28 @@ export async function seedBasics() {
     data: { fullName: "Ким Денис", color: "#45B48C", subjects: ["информатика"] },
   });
   const validFrom = toDbDate("2026-01-01");
-  await testDb.tariff.createMany({
-    data: [
-      { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "MONTHLY", pricePerHour: 1500, validFrom },
-      { kind: "INDIVIDUAL", program: "EXAM", paymentMode: "PER_LESSON", pricePerHour: 1700, validFrom },
-      { kind: "INDIVIDUAL", program: "SCHOOL", paymentMode: "MONTHLY", pricePerHour: 1300, validFrom },
-      { kind: "INDIVIDUAL", program: "SCHOOL", paymentMode: "PER_LESSON", pricePerHour: 1500, validFrom },
-      { kind: "GROUP", program: "EXAM", paymentMode: "MONTHLY", pricePerHour: 800, validFrom },
-      { kind: "GROUP", program: "EXAM", paymentMode: "PER_LESSON", pricePerHour: 1000, validFrom },
-      { kind: "GROUP", program: "SCHOOL", paymentMode: "MONTHLY", pricePerHour: 800, validFrom },
-      { kind: "GROUP", program: "SCHOOL", paymentMode: "PER_LESSON", pricePerHour: 1000, validFrom },
-    ],
-  });
+  const prices: [TariffKind, Program, PaymentMode, number][] = [
+    ["INDIVIDUAL", "EXAM", "MONTHLY", 1500],
+    ["INDIVIDUAL", "EXAM", "PER_LESSON", 1700],
+    ["INDIVIDUAL", "SCHOOL", "MONTHLY", 1300],
+    ["INDIVIDUAL", "SCHOOL", "PER_LESSON", 1500],
+    ["GROUP", "EXAM", "MONTHLY", 800],
+    ["GROUP", "EXAM", "PER_LESSON", 1000],
+    ["GROUP", "SCHOOL", "MONTHLY", 800],
+    ["GROUP", "SCHOOL", "PER_LESSON", 1000],
+  ];
+  for (const [kind, program, paymentMode, pricePerHour] of prices) {
+    await testDb.tariff.create({
+      data: {
+        kind,
+        program,
+        paymentMode,
+        name: defaultTariffName({ kind, program, paymentMode }),
+        isDefault: true,
+        prices: { create: { pricePerHour, validFrom } },
+      },
+    });
+  }
   await testDb.ratePlan.create({
     data: {
       name: "Шаблон",
