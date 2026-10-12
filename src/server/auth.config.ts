@@ -31,6 +31,8 @@ export const authConfig = {
       if (pathname.startsWith("/pay/")) return true;
       // Приглашение сотрудника: задать пароль по одноразовой ссылке — до входа.
       if (pathname.startsWith("/invite/")) return true;
+      // Проверка доступности для мониторинга — без данных пользователей.
+      if (pathname === "/api/health") return true;
       if (pathname === "/login") {
         return user ? Response.redirect(new URL("/lessons", request.nextUrl)) : true;
       }

@@ -1,6 +1,6 @@
 "use server";
 
-import { AuthError } from "next-auth";
+import { AuthError, CredentialsSignin } from "next-auth";
 import { signIn, signOut } from "@/server/auth";
 
 export interface LoginState {
@@ -19,7 +19,10 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
     return {};
   } catch (e) {
     // Успешный вход завершается redirect — это тоже исключение, его пробрасываем дальше.
-    if (e instanceof AuthError) return { error: "Неверный email или пароль", email };
+    if (e instanceof AuthError) {
+      const limited = e instanceof CredentialsSignin && e.code === "rate_limited";
+      return { error: limited ? "Слишком много попыток входа. Подождите 15 минут и попробуйте снова." : "Неверный email или пароль", email };
+    }
     throw e;
   }
 }

@@ -19,7 +19,7 @@ export interface TeacherInput {
   onlineUrl?: string | null;
 }
 
-async function createInvite(db: Db, userId: string, actorId: string) {
+export async function createInvite(db: Db, userId: string, actorId: string | null) {
   const token = randomBytes(18).toString("base64url");
   await db.userInvite.create({ data: { userId, token, createdById: actorId, expiresAt: new Date(Date.now() + INVITE_DAYS * 86_400_000) } });
   return `${appUrl()}/invite/${token}`;

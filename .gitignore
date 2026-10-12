@@ -42,6 +42,7 @@ next-env.d.ts
 
 # env: шаблон коммитим, настоящие значения — нет
 !.env.example
+!.env.production.example
 
 # prisma
 /src/generated
@@ -49,3 +50,6 @@ next-env.d.ts
 # playwright
 /test-results/
 /playwright-report/
+
+# резервные копии базы на сервере
+/backups/

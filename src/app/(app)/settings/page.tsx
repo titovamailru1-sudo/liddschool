@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDate, formatTime } from "@/domain/format";
 import { loadSettings } from "@/server/billing/settings";
+import { WORKER_HEARTBEAT_KEY } from "@/server/alerts";
 import { prisma } from "@/server/db";
 import { botUsername, messageSender } from "@/server/messaging/telegram";
 import { requirePermission } from "@/server/session";
@@ -15,7 +16,7 @@ export default async function SettingsPage() {
   const sender = messageSender();
   const [username, runs, linkedParents, parents] = await Promise.all([
     sender ? botUsername() : Promise.resolve(null),
-    prisma.jobRun.findMany({ orderBy: { startedAt: "desc" }, take: 8 }),
+    prisma.jobRun.findMany({ where: { key: { not: WORKER_HEARTBEAT_KEY } }, orderBy: { startedAt: "desc" }, take: 8 }),
     prisma.parent.count({ where: { telegramChatId: { not: null } } }),
     prisma.parent.count(),
   ]);

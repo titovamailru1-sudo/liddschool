@@ -4,6 +4,7 @@
  * Запуск: npm run worker (читает .env).
  */
 import { PrismaClient } from "@prisma/client";
+import { reportError, WORKER_HEARTBEAT_KEY } from "../src/server/alerts";
 import { runJobs } from "../src/server/jobs";
 import { handleTelegramUpdate } from "../src/server/messaging/outbox";
 import { messageSender, telegramBot } from "../src/server/messaging/telegram";
@@ -23,8 +24,12 @@ async function jobsLoop() {
       const result = await runJobs(prisma, new Date(), messageSender());
       log("jobs", JSON.stringify(result));
     } catch (e) {
-      log("jobs: ошибка", e);
+      await reportError("worker", e, "jobs");
     }
+    // «Воркер жив» — для /api/health и мониторинга.
+    await prisma.jobRun
+      .upsert({ where: { key: WORKER_HEARTBEAT_KEY }, create: { key: WORKER_HEARTBEAT_KEY, finishedAt: new Date() }, update: { finishedAt: new Date() } })
+      .catch((e) => reportError("worker", e, "heartbeat"));
     await new Promise((r) => setTimeout(r, INTERVAL_MS));
   }
 }
@@ -42,7 +47,7 @@ async function telegramLoop() {
       const updates = await bot.getUpdates(offset, 30, controller.signal);
       for (const u of updates) {
         offset = u.update_id + 1;
-        await handleTelegramUpdate(prisma, bot, u).catch((e) => log("telegram: ошибка обработки", e));
+        await handleTelegramUpdate(prisma, bot, u).catch((e) => reportError("worker", e, "telegram: обработка сообщения"));
       }
     } catch (e) {
       if (stopping) break;

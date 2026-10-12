@@ -288,6 +288,13 @@ npm run dev                   # http://localhost:3000
 | `npm run db:reset` | сбросить базу, применить миграции и сид |
 | `npm run db:studio` | Prisma Studio для просмотра данных |
 | `npm run worker` | фоновый процесс: раз в минуту счета (25-е), списания (1-е), просрочки (3-е), ссылки поурочникам (48/24 ч), отправка сообщений; приём сообщений боту |
+| `npm run init:school -- email "Имя"` | первый запуск на продакшене: тарифы школы, шаблон ставки, владелец + ссылка для пароля (без стирания базы) |
+| `docker compose -f compose.prod.yml up -d --build` | продакшен на сервере (сайт, воркер, база, Caddy/HTTPS, ночные копии) — см. `docs/DEPLOY.md` |
+
+Продакшен: `docs/DEPLOY.md`, `compose.prod.yml`, `deploy/` (Caddyfile, копии и восстановление, `deploy.sh`).
+`/api/health` — проверка сайта, базы и воркера (воркер раз в минуту пишет `JobRun` `worker:heartbeat`).
+Ошибки → лог и Telegram владельцу (`src/server/alerts.ts`, `src/instrumentation.ts`, чат `ALERT_TELEGRAM_CHAT_ID`).
+Вход: 5 неудачных попыток за 15 мин по email (50 по IP) → блок на 15 мин (`src/server/rate-limit.ts`).
 
 Переменные для оплаты и бота (`.env`): `APP_URL` — адрес CRM для ссылок в сообщениях; `TELEGRAM_BOT_TOKEN`
 (создать бота у @BotFather); `TELEGRAM_FAKE=1` — заглушка: сообщения пишутся в лог воркера вместо отправки.
