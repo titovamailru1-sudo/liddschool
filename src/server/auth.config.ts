@@ -5,6 +5,8 @@ import { canAccessPath, type Role } from "@/lib/access";
  * Часть настроек Auth.js без БД и bcrypt — её же использует proxy.ts.
  * Провайдер входа добавляется в server/auth.ts.
  */
+const PUBLIC_PATHS = new Set(["/", "/privacy", "/robots.txt", "/sitemap.xml"]);
+
 export const authConfig = {
   pages: { signIn: "/login" },
   session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
@@ -33,6 +35,8 @@ export const authConfig = {
       if (pathname.startsWith("/invite/")) return true;
       // Проверка доступности для мониторинга — без данных пользователей.
       if (pathname === "/api/health") return true;
+      // Публичный сайт школы: главная, политика и файлы для поисковиков.
+      if (PUBLIC_PATHS.has(pathname)) return true;
       if (pathname === "/login") {
         return user ? Response.redirect(new URL("/lessons", request.nextUrl)) : true;
       }

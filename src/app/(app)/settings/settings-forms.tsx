@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { runJobsAction, savePayeeAction } from "./actions";
+import { runJobsAction, savePayeeAction, saveSiteAction } from "./actions";
 
 type Payee = { name?: string; payeeInn?: string; bankName?: string; bic?: string; personalAcc?: string; correspAcc?: string; sbpPhone?: string };
 
@@ -61,6 +61,47 @@ export function PayeeForm({ initial }: { initial: Payee }) {
       <Button type="submit" disabled={pending}>
         {pending && <Loader2Icon className="animate-spin" />}
         Сохранить реквизиты
+      </Button>
+    </form>
+  );
+}
+
+type Site = { phone?: string; telegram?: string; whatsapp?: string; email?: string };
+
+const SITE_FIELDS: { key: keyof Site; label: string; placeholder: string }[] = [
+  { key: "phone", label: "Телефон", placeholder: "+7 914 000-00-00" },
+  { key: "telegram", label: "Telegram", placeholder: "liddschool или https://t.me/liddschool" },
+  { key: "whatsapp", label: "WhatsApp (номер)", placeholder: "+7 914 000-00-00" },
+  { key: "email", label: "Email", placeholder: "hello@liddschool.ru" },
+];
+
+export function SiteForm({ initial }: { initial: Site }) {
+  const [v, setV] = useState<Site>(initial);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        startTransition(async () => {
+          const r = await saveSiteAction(v);
+          if (r.ok) toast.success(r.message ?? "Сохранено");
+          else setError(r.error);
+        });
+      }}
+    >
+      {SITE_FIELDS.map((f) => (
+        <div key={f.key} className="space-y-1.5">
+          <Label htmlFor={`site-${f.key}`}>{f.label}</Label>
+          <Input id={`site-${f.key}`} placeholder={f.placeholder} value={v[f.key] ?? ""} onChange={(e) => setV({ ...v, [f.key]: e.target.value })} />
+        </div>
+      ))}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+      <Button type="submit" disabled={pending}>
+        {pending && <Loader2Icon className="animate-spin" />}
+        Сохранить контакты
       </Button>
     </form>
   );

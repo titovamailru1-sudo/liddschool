@@ -31,6 +31,27 @@ export async function savePayeeAction(payload: z.input<typeof payeeSchema>): Pro
   });
 }
 
+const siteSchema = z.object({
+  phone: z.string().trim().max(30).optional(),
+  telegram: z.string().trim().max(100).optional(),
+  whatsapp: z.string().trim().max(30).optional(),
+  email: z.union([z.literal(""), z.email("Проверьте email")]).optional(),
+});
+
+/** Контакты на главной странице сайта. */
+export async function saveSiteAction(payload: z.input<typeof siteSchema>): Promise<Result> {
+  const user = await requirePermission("settings.manage");
+  return runAction(async () => {
+    const p = siteSchema.parse(payload);
+    const clean = Object.fromEntries(Object.entries(p).filter(([, v]) => v));
+    await saveSetting(prisma, "site", clean);
+    await prisma.auditLog.create({ data: { entity: "Setting", entityId: "site", action: "update", userId: user.id } });
+    revalidatePath("/settings");
+    revalidatePath("/");
+    return { ok: true, message: "Контакты сохранены" };
+  });
+}
+
 /** Запустить фоновые задачи вручную (обычно их выполняет `npm run worker` раз в минуту). */
 export async function runJobsAction(): Promise<Result<Record<string, unknown>>> {
   await requirePermission("settings.manage");

@@ -10,6 +10,15 @@ export interface SchoolSettings {
   creditOnSchoolCancel: boolean;
   creditOnExcused: boolean;
   payee: Partial<PayeeDetails> & { sbpPhone?: string };
+  site: SiteContacts;
+}
+
+/** Контакты школы на публичной главной странице; пустые не показываются. */
+export interface SiteContacts {
+  phone?: string;
+  telegram?: string; // имя без @ или ссылка
+  whatsapp?: string;
+  email?: string;
 }
 
 export const DEFAULT_SETTINGS: SchoolSettings = {
@@ -21,6 +30,7 @@ export const DEFAULT_SETTINGS: SchoolSettings = {
   creditOnSchoolCancel: true,
   creditOnExcused: true,
   payee: {},
+  site: {},
 };
 
 export async function loadSettings(db: Db): Promise<SchoolSettings> {

@@ -3,6 +3,7 @@ import { addDays, nextMonth, parseLocalDate, startOfDay, zonedInstant, type Loca
 import { calcOffer, LEAD_STAGE_LABEL, leadConversion, leadNeedsTouch, renderOfferMessage } from "@/domain/crm";
 import { subjectDative, studentNameGenitive } from "@/domain/names";
 import { lessonHours, tariffOn } from "@/domain/pricing";
+import { adminAssignee } from "../billing/tasks";
 import { DomainError } from "../errors";
 import { loadTariffs, type Db } from "../lessons/context";
 import { checkConflicts, moveLesson, type ConflictView } from "../lessons/service";
@@ -102,14 +103,39 @@ export async function leadTouches(db: Db, leadId: string) {
   return rows.map((t) => ({ id: t.id, kind: t.kind, text: t.text, at: t.at.toISOString(), author: t.author?.name ?? "система" }));
 }
 
-export async function createLead(db: RootDb, actorId: string, input: LeadInput) {
+/** actorId = null — заявка пришла сама (с сайта), без автора. */
+export async function createLead(db: RootDb, actorId: string | null, input: LeadInput, note = "Заявка создана") {
   const data = leadData(input);
   return db.$transaction(async (tx) => {
     const lead = await tx.lead.create({ data: { ...data, ownerId: data.ownerId ?? actorId } });
-    await tx.leadTouch.create({ data: { leadId: lead.id, kind: "stage", text: "Заявка создана", authorId: actorId } });
+    await tx.leadTouch.create({ data: { leadId: lead.id, kind: "stage", text: note, authorId: actorId } });
     await tx.auditLog.create({ data: { entity: "Lead", entityId: lead.id, action: "create", userId: actorId } });
     return lead;
   });
+}
+
+/**
+ * Заявка на пробный урок с главной страницы: лид «Сайт» и сразу задача администратору связаться.
+ * Задача закрывается сама при первом касании (как задачи «Перезвонить лиду»).
+ */
+export async function createSiteLead(db: RootDb, input: Omit<LeadInput, "source" | "ownerId">, now: Date) {
+  const lead = await createLead(db, null, { ...input, source: "SITE" }, "Заявка с сайта");
+  await db.task.create({
+    data: {
+      autoKey: `lead-idle:${lead.id}:site`,
+      isAuto: true,
+      priority: "HIGH",
+      type: "lead",
+      title: `Новая заявка с сайта: ${lead.childName}`,
+      description: [lead.parentName && `Родитель: ${lead.parentName}`, `Телефон: ${lead.phone}`, lead.preferredTime && `Удобное время: ${lead.preferredTime}`]
+        .filter(Boolean)
+        .join("\n"),
+      assigneeId: await adminAssignee(db),
+      leadId: lead.id,
+      dueAt: new Date(now.getTime() + 2 * 3_600_000),
+    },
+  });
+  return lead;
 }
 
 export async function updateLead(db: RootDb, actorId: string, leadId: string, input: LeadInput) {

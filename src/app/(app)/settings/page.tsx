@@ -6,7 +6,7 @@ import { WORKER_HEARTBEAT_KEY } from "@/server/alerts";
 import { prisma } from "@/server/db";
 import { botUsername, messageSender } from "@/server/messaging/telegram";
 import { requirePermission } from "@/server/session";
-import { PayeeForm, RunJobsButton } from "./settings-forms";
+import { PayeeForm, RunJobsButton, SiteForm } from "./settings-forms";
 
 export const metadata = { title: "Настройки" };
 
@@ -31,6 +31,14 @@ export default async function SettingsPage() {
             Показываются родителям на странице оплаты по ссылке из сообщения, вместе с QR-кодом для банковского приложения.
           </p>
           <PayeeForm initial={settings.payee} />
+        </section>
+
+        <section className="rounded-lg border bg-surface p-4 lg:col-start-1">
+          <h2 className="mb-1 text-sm font-semibold">Контакты на сайте</h2>
+          <p className="mb-4 text-xs text-text-secondary">
+            Показываются на главной странице для родителей. Пустые поля не выводятся. Заявки с сайта приходят в «Лиды».
+          </p>
+          <SiteForm initial={settings.site} />
         </section>
 
         <div className="space-y-6">
