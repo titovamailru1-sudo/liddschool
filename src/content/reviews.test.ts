@@ -12,3 +12,21 @@ describe("отзывы на сайте", () => {
     expect(visibleReviews(all, false)).toHaveLength(2);
   });
 });
+
+describe("педагоги на сайте", async () => {
+  const { SITE_TEACHERS, visibleTeacher } = await import("./teachers");
+  const t = SITE_TEACHERS[0];
+
+  it("на продакшене — только подтверждённые факты", () => {
+    const v = visibleTeacher(t, true);
+    expect(v.stats).toEqual(t.stats);
+    expect(v.tags).toEqual(t.tags);
+    expect(v.about).toBe(t.about);
+  });
+
+  it("при разработке — с черновиком", () => {
+    const v = visibleTeacher(t, false);
+    expect(v.stats.length).toBe(t.stats.length + (t.draft?.stats?.length ?? 0));
+    expect(v.about).toContain(t.about);
+  });
+});

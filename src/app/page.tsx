@@ -24,7 +24,7 @@ import { localDateOf } from "@/domain/calendar";
 import { formatRub } from "@/domain/format";
 import { landingJsonLd, landingPrices, telegramUrl, telUrl, whatsappUrl, type Faq } from "@/domain/landing";
 import { SITE_REVIEWS, visibleReviews } from "@/content/reviews";
-import { SITE_TEACHERS } from "@/content/teachers";
+import { SITE_TEACHERS, visibleTeacher } from "@/content/teachers";
 import { SITE, siteUrl } from "@/lib/site";
 import { auth } from "@/server/auth";
 import { loadSettings } from "@/server/billing/settings";
@@ -105,10 +105,16 @@ export default async function HomePage() {
     phone: site.phone,
     email: site.email,
     sameAs: site.telegram ? [telegramUrl(site.telegram)] : undefined,
-    teachers: SITE_TEACHERS.map((t) => ({ name: t.name, jobTitle: `Педагог: ${t.subjects}`, description: [...t.facts, t.about].join(". "), image: `${siteUrl()}${t.photo}` })),
+    teachers: SITE_TEACHERS.map((t) => visibleTeacher(t, true)).map((t) => ({
+      name: t.name,
+      jobTitle: `Педагог: ${t.subjects}`,
+      description: [...t.stats.map((st) => `${st.value} — ${st.label}`), t.about].join(". "),
+      image: `${siteUrl()}${t.photo}`,
+    })),
     reviews: SITE_REVIEWS.filter((r) => !r.example),
   });
   const reviews = visibleReviews();
+  const teachers = SITE_TEACHERS.map((t) => visibleTeacher(t));
   const contacts = [
     site.phone && { href: telUrl(site.phone), label: site.phone, icon: Phone },
     site.telegram && { href: telegramUrl(site.telegram), label: "Telegram", icon: Send },
@@ -237,23 +243,32 @@ export default async function HomePage() {
             Студенты-отличники направлений прикладной математики и информатики: сами недавно сдавали экзамены и знают, где ученики теряют баллы.
           </p>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {SITE_TEACHERS.map((t) => (
+            {teachers.map((t) => (
               <article key={t.name} className="flex flex-col rounded-xl border bg-surface p-5">
                 <div className="flex items-center gap-4">
-                  <Image src={t.photo} alt={`${t.name}, педагог Lidd School`} width={88} height={88} className="size-[88px] shrink-0 rounded-full object-cover" />
+                  <Image src={t.photo} alt={`${t.name}, педагог Lidd School`} width={88} height={88} className="size-[88px] shrink-0 rounded-full object-cover ring-4 ring-brand-soft" />
                   <div>
                     <h3 className="text-lg font-semibold">{t.name}</h3>
                     <p className="text-sm text-brand-text">{t.subjects}</p>
                   </div>
                 </div>
-                <ul className="mt-4 space-y-1.5 text-sm font-medium">
-                  {t.facts.map((f) => (
-                    <li key={f} className="flex gap-2">
-                      <Check className="mt-0.5 size-4 shrink-0 text-done" /> {f}
+                <dl className="mt-5 grid grid-cols-2 gap-2">
+                  {t.stats.map((st) => (
+                    <div key={st.label} className="rounded-lg bg-brand-soft/60 px-3 py-2.5">
+                      <dt className="sr-only">{st.label}</dt>
+                      <dd className="text-xl leading-tight font-bold text-brand-text tabular-nums">{st.value}</dd>
+                      <dd className="mt-0.5 text-xs leading-snug text-text-secondary">{st.label}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <ul className="mt-4 flex flex-wrap gap-1.5" aria-label="Сильные стороны">
+                  {t.tags.map((tag) => (
+                    <li key={tag} className="rounded-full border px-2.5 py-0.5 text-xs">
+                      {tag}
                     </li>
                   ))}
                 </ul>
-                <p className="mt-3 text-sm text-text-secondary">{t.about}</p>
+                <p className="mt-4 text-sm text-text-secondary">{t.about}</p>
               </article>
             ))}
           </div>
