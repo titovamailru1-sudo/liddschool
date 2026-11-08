@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Wallet, WalletCards } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { monthParam } from "@/lib/month-param";
 import { PageHeader } from "@/components/layout/page-header";
-import { addDays, firstOfMonth, lastOfMonth, localDateOf, parseLocalDate } from "@/domain/calendar";
+import { addDays, firstOfMonth, localDateOf, parseLocalDate } from "@/domain/calendar";
 import { financeTabsFor } from "@/lib/access";
 import { cn } from "@/lib/utils";
 import { debtors, paymentsJournal, staffList } from "@/server/billing/queries";
@@ -21,18 +22,6 @@ export const metadata = { title: "Финансы" };
 
 
 /** Месяц из адреса (?month=2026-10) или текущий; соседние — для навигации. */
-function monthParam(v: string | undefined, today: string) {
-  const { year, month } = parseLocalDate(today);
-  let y = year;
-  let m = month;
-  if (v && /^\d{4}-\d{2}$/.test(v)) {
-    const [yy, mm] = v.split("-").map(Number);
-    if (mm >= 1 && mm <= 12) [y, m] = [yy, mm];
-  }
-  const start = firstOfMonth(y, m);
-  return { year: y, month: m, key: start.slice(0, 7), prev: addDays(start, -1).slice(0, 7), next: addDays(lastOfMonth(y, m), 1).slice(0, 7) };
-}
-
 type Search = Record<string, string | undefined>;
 const isDate = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 

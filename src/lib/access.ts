@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   "clients.create": STAFF,
   "clients.edit": STAFF, // карточка, родители, архив, приглашение в Telegram
   "groups.view": ALL, // педагог — только свои группы
+  "groups.manage": STAFF, // создать и изменить группу, состав
   "teachers.view": STAFF,
   "teachers.create": STAFF, // администратор тоже добавляет педагогов (без доступа к ставкам)
   "teachers.edit": STAFF,

@@ -1,20 +1,27 @@
-import { Users } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
+import { localDateOf } from "@/domain/calendar";
 import { PageHeader } from "@/components/layout/page-header";
+import { can } from "@/lib/access";
+import { now } from "@/server/clock";
+import { prisma } from "@/server/db";
+import { groupList } from "@/server/groups/queries";
 import { requirePermission } from "@/server/session";
+import { GroupsView } from "./groups-view";
 
 export const metadata = { title: "Группы" };
 
-export default async function Page() {
-  await requirePermission("groups.view");
+export default async function GroupsPage({ searchParams }: { searchParams: Promise<{ archived?: string; create?: string }> }) {
+  const user = await requirePermission("groups.view");
+  const sp = await searchParams;
+  const archived = sp.archived === "1";
+  const canManage = can(user.role, "groups.manage");
+  const [groups, teachers] = await Promise.all([
+    groupList(user, localDateOf(now()), archived),
+    canManage ? prisma.teacher.findMany({ where: { isActive: true }, orderBy: { fullName: "asc" }, select: { id: true, fullName: true, subjects: true } }) : [],
+  ]);
   return (
     <>
-      <PageHeader title="Группы" />
-      <EmptyState
-        icon={Users}
-        title="Список групп — этап 3"
-        hint="Состав, расписание и журнал посещаемости групп появятся на следующих этапах."
-      />
+      <PageHeader title="Группы" description={user.role === "TEACHER" ? "Ваши группы: состав, расписание и посещаемость." : undefined} />
+      <GroupsView groups={groups} teachers={teachers} canManage={canManage} archived={archived} createOpen={sp.create === "1"} />
     </>
   );
 }

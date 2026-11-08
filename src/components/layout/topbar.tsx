@@ -13,6 +13,7 @@ import {
   Settings,
   UserPlus,
   UserRoundPlus,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -35,6 +36,7 @@ import { NavLinks, type NavItem } from "./sidebar";
 const CREATE_ITEMS: { label: string; icon: LucideIcon; permission: Permission; stage: number; href?: string }[] = [
   { label: "Урок", icon: CalendarPlus, permission: "lessons.create", stage: 2, href: "/lessons?create=1" },
   { label: "Клиент", icon: UserRoundPlus, permission: "clients.create", stage: 3, href: "/clients?create=1" },
+  { label: "Группа", icon: Users, permission: "groups.manage", stage: 6, href: "/groups?create=1" },
   { label: "Платёж", icon: Banknote, permission: "finance.payments", stage: 3, href: "/finance?tab=payments&pay=1" },
   { label: "Задача", icon: ClipboardPlus, permission: "tasks.create", stage: 5, href: "/tasks?create=1" },
   { label: "Лид", icon: UserPlus, permission: "leads.create", stage: 5, href: "/leads?create=1" },
