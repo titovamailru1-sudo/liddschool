@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -11,6 +12,7 @@ import {
   Mail,
   MessageCircle,
   Phone,
+  Quote,
   Send,
   Sigma,
   Code2,
@@ -21,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { localDateOf } from "@/domain/calendar";
 import { formatRub } from "@/domain/format";
 import { landingJsonLd, landingPrices, telegramUrl, telUrl, whatsappUrl, type Faq } from "@/domain/landing";
+import { SITE_REVIEWS, visibleReviews } from "@/content/reviews";
+import { SITE_TEACHERS } from "@/content/teachers";
 import { SITE, siteUrl } from "@/lib/site";
 import { auth } from "@/server/auth";
 import { loadSettings } from "@/server/billing/settings";
@@ -64,7 +68,9 @@ export default async function HomePage() {
     },
     {
       q: "Как проходят онлайн-занятия?",
-      a: "По видеосвязи: у каждого педагога постоянная ссылка на занятие, ничего устанавливать не нужно. Нужны компьютер или планшет, наушники и стабильный интернет.",
+      a:
+        "По видеосвязи: у каждого педагога постоянная ссылка на занятие. Педагог показывает онлайн-доску и даёт к ней доступ по ссылке — конспект всегда под рукой, " +
+        "переписывать всё не обязательно. Дальше вместе решаем типовые задания. Нужны компьютер или планшет, наушники и стабильный интернет.",
     },
     {
       q: "Как оплачивать занятия?",
@@ -99,7 +105,10 @@ export default async function HomePage() {
     phone: site.phone,
     email: site.email,
     sameAs: site.telegram ? [telegramUrl(site.telegram)] : undefined,
+    teachers: SITE_TEACHERS.map((t) => ({ name: t.name, jobTitle: `Педагог: ${t.subjects}`, description: [...t.facts, t.about].join(". "), image: `${siteUrl()}${t.photo}` })),
+    reviews: SITE_REVIEWS.filter((r) => !r.example),
   });
+  const reviews = visibleReviews();
   const contacts = [
     site.phone && { href: telUrl(site.phone), label: site.phone, icon: Phone },
     site.telegram && { href: telegramUrl(site.telegram), label: "Telegram", icon: Send },
@@ -121,6 +130,7 @@ export default async function HomePage() {
           </Link>
           <nav className="hidden gap-5 text-sm text-text-secondary md:flex" aria-label="Разделы">
             <a href="#programs" className="hover:text-text-primary">Программы</a>
+            <a href="#teachers" className="hover:text-text-primary">Педагоги</a>
             <a href="#how" className="hover:text-text-primary">Как проходят занятия</a>
             <a href="#prices" className="hover:text-text-primary">Цены</a>
             <a href="#faq" className="hover:text-text-primary">Вопросы</a>
@@ -205,7 +215,7 @@ export default async function HomePage() {
                 icon={GraduationCap}
                 title="Подготовка к ОГЭ и ЕГЭ"
                 text="Разбираем задания экзамена по темам, решаем варианты и закрываем пробелы, которые мешают набрать нужный балл."
-                items={["Математика: ОГЭ и ЕГЭ", "Информатика: ОГЭ и ЕГЭ, включая задачи на программирование", "Решение вариантов и разбор ошибок"]}
+                items={["Математика: ОГЭ и ЕГЭ", "Информатика: ОГЭ и ЕГЭ, включая задачи на программирование", "За год — все типы заданий из открытого банка ФИПИ", "Решение вариантов и разбор ошибок"]}
               />
               <Program
                 icon={Sigma}
@@ -220,6 +230,36 @@ export default async function HomePage() {
           </div>
         </section>
 
+        {/* Педагоги */}
+        <section id="teachers" aria-labelledby="teachers-h" className="mx-auto max-w-[1152px] scroll-mt-20 px-4 py-14 md:px-6">
+          <h2 id="teachers-h" className="text-2xl font-bold tracking-tight sm:text-3xl">Педагоги</h2>
+          <p className="mt-2 max-w-2xl text-text-secondary">
+            Студенты-отличники направлений прикладной математики и информатики: сами недавно сдавали экзамены и знают, где ученики теряют баллы.
+          </p>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {SITE_TEACHERS.map((t) => (
+              <article key={t.name} className="flex flex-col rounded-xl border bg-surface p-5">
+                <div className="flex items-center gap-4">
+                  <Image src={t.photo} alt={`${t.name}, педагог Lidd School`} width={88} height={88} className="size-[88px] shrink-0 rounded-full object-cover" />
+                  <div>
+                    <h3 className="text-lg font-semibold">{t.name}</h3>
+                    <p className="text-sm text-brand-text">{t.subjects}</p>
+                  </div>
+                </div>
+                <ul className="mt-4 space-y-1.5 text-sm font-medium">
+                  {t.facts.map((f) => (
+                    <li key={f} className="flex gap-2">
+                      <Check className="mt-0.5 size-4 shrink-0 text-done" /> {f}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-sm text-text-secondary">{t.about}</p>
+              </article>
+            ))}
+          </div>
+          <p className="mt-6 text-sm text-text-secondary">Педагога подбираем на пробном уроке — под предмет, цель и характер ребёнка.</p>
+        </section>
+
         {/* Как проходят занятия */}
         <section id="how" aria-labelledby="how-h" className="mx-auto max-w-[1152px] scroll-mt-20 px-4 py-14 md:px-6">
           <h2 id="how-h" className="text-2xl font-bold tracking-tight sm:text-3xl">Как проходят занятия</h2>
@@ -228,7 +268,7 @@ export default async function HomePage() {
               ["Заявка", "Оставьте заявку — мы перезвоним и подберём время пробного урока."],
               ["Пробный урок", "Бесплатно: знакомство с педагогом, проверка уровня, цели и план."],
               ["Расписание", "Выбираете дни и время, формат и способ оплаты: абонемент или поурочно."],
-              ["Занятия онлайн", "По постоянной ссылке педагога — из дома, с компьютера или планшета."],
+              ["Занятия онлайн", "Педагог объясняет теорию на онлайн-доске (доступ по ссылке), затем вместе решаете типовые задания."],
             ].map(([title, text], i) => (
               <li key={title} className="rounded-xl border bg-surface p-5">
                 <span className="text-sm font-semibold text-brand-text">Шаг {i + 1}</span>
@@ -269,6 +309,26 @@ export default async function HomePage() {
               <p className="mt-4 text-sm text-text-secondary">
                 Абонемент считается по вашему расписанию на месяц: столько уроков, сколько их в календаре. Пробный урок — бесплатно.
               </p>
+            </div>
+          </section>
+        )}
+
+        {/* Отзывы — только настоящие; примеры видны лишь при разработке (src/content/reviews.ts) */}
+        {reviews.length > 0 && (
+          <section id="reviews" aria-labelledby="reviews-h" className="mx-auto max-w-[1152px] scroll-mt-20 px-4 pt-14 md:px-6">
+            <h2 id="reviews-h" className="text-2xl font-bold tracking-tight sm:text-3xl">Отзывы родителей</h2>
+            <div className="mt-8 grid gap-4 md:grid-cols-3">
+              {reviews.map((r) => (
+                <figure key={r.author + r.text} className="relative flex flex-col rounded-xl border bg-surface p-5">
+                  {r.example && (
+                    <span className="absolute top-3 right-3 rounded bg-warning-soft px-1.5 py-0.5 text-[11px] font-medium text-warning">Пример — заменить</span>
+                  )}
+                  <Quote className="size-6 text-brand/40" />
+                  <blockquote className="mt-2 flex-1 text-[15px]">{r.text}</blockquote>
+                  {r.result && <p className="mt-3 text-sm font-semibold text-done">{r.result}</p>}
+                  <figcaption className="mt-2 text-sm text-text-secondary">{r.author}</figcaption>
+                </figure>
+              ))}
             </div>
           </section>
         )}

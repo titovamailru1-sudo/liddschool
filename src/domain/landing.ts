@@ -35,7 +35,19 @@ export interface Faq {
  * Разметка schema.org для поисковиков: школа, её услуги с ценами и вопросы-ответы.
  * Цены — те же, что видит посетитель (иначе Яндекс и Google снижают доверие к разметке).
  */
-export function landingJsonLd(input: { url: string; name: string; description: string; prices: LandingPrices; faq: readonly Faq[]; phone?: string; email?: string; sameAs?: string[] }) {
+export function landingJsonLd(input: {
+  url: string;
+  name: string;
+  description: string;
+  prices: LandingPrices;
+  faq: readonly Faq[];
+  phone?: string;
+  email?: string;
+  sameAs?: string[];
+  teachers?: readonly { name: string; jobTitle: string; description: string; image: string }[];
+  /** Только настоящие отзывы — примеры в разметку не передавать. */
+  reviews?: readonly { author: string; text: string }[];
+}) {
   const PROGRAM_NAME: Record<Program, string> = { EXAM: "Подготовка к ОГЭ и ЕГЭ", SCHOOL: "Школьная программа" };
   const offers = input.prices.programs.map((p) => ({
     "@type": "Offer",
@@ -64,6 +76,12 @@ export function landingJsonLd(input: { url: string; name: string; description: s
       ...(input.email ? { email: input.email } : {}),
       ...(input.sameAs?.length ? { sameAs: input.sameAs } : {}),
       areaServed: { "@type": "Country", name: "Россия" },
+      ...(input.teachers?.length
+        ? { employee: input.teachers.map((t) => ({ "@type": "Person", name: t.name, jobTitle: t.jobTitle, description: t.description, image: t.image })) }
+        : {}),
+      ...(input.reviews?.length
+        ? { review: input.reviews.map((r) => ({ "@type": "Review", author: { "@type": "Person", name: r.author }, reviewBody: r.text })) }
+        : {}),
       hasOfferCatalog: { "@type": "OfferCatalog", name: "Занятия", itemListElement: offers },
     },
     {

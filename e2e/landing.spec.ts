@@ -8,6 +8,9 @@ test("главная: описание школы, цены из тарифов,
   await expect(page).toHaveTitle(/Репетитор по математике и информатике онлайн/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Репетиторы по математике и информатике онлайн");
   await expect(page.getByRole("region", { name: "Стоимость занятий" })).toContainText("1 500 ₽");
+  await expect(page.getByRole("region", { name: "Педагоги" }).getByRole("img", { name: /Александр/ })).toBeVisible();
+  // Примеры отзывов — только при разработке; e2e идёт на продакшен-сборке.
+  await expect(page.getByRole("region", { name: "Отзывы родителей" })).toHaveCount(0);
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "index, follow");
 
   const ld = JSON.parse((await page.locator('script[type="application/ld+json"]').textContent()) ?? "[]");

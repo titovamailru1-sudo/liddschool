@@ -55,9 +55,29 @@ describe("разметка для поисковиков", () => {
     });
     expect(org).toMatchObject({ "@type": "EducationalOrganization", telephone: "+7 914 000-00-00" });
     expect(org).not.toHaveProperty("email");
+    expect(org).not.toHaveProperty("employee");
+    expect(org).not.toHaveProperty("review");
     const offers = (org as { hasOfferCatalog: { itemListElement: { price: number }[] } }).hasOfferCatalog.itemListElement;
     expect(offers.map((o) => o.price)).toEqual([1500, 1300, 800]);
     expect(faq).toMatchObject({ "@type": "FAQPage", mainEntity: [{ name: "Пробный урок платный?", acceptedAnswer: { text: "Нет, бесплатный." } }] });
+  });
+});
+
+describe("педагоги и отзывы в разметке", () => {
+  it("педагоги — сотрудники школы, отзывы — Review", () => {
+    const [org] = landingJsonLd({
+      url: "https://liddschool.ru",
+      name: "Lidd School",
+      description: "",
+      prices: { programs: [], groupFrom: null },
+      faq: [],
+      teachers: [{ name: "Алёна", jobTitle: "Педагог по математике", description: "86 баллов", image: "https://liddschool.ru/teachers/alena.webp" }],
+      reviews: [{ author: "Ольга", text: "Спасибо!" }],
+    });
+    expect(org).toMatchObject({
+      employee: [{ "@type": "Person", name: "Алёна", image: "https://liddschool.ru/teachers/alena.webp" }],
+      review: [{ "@type": "Review", author: { name: "Ольга" }, reviewBody: "Спасибо!" }],
+    });
   });
 });
 
