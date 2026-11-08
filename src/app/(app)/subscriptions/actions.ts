@@ -32,7 +32,7 @@ export async function rebuildDraftAction(clientId: string, payload: z.input<type
   return runAction(async () => {
     const m = month.parse(payload);
     const today = localDateOf(now());
-    const r = await buildInvoiceDraft(prisma, z.string().min(1).parse(clientId), m.year, m.month, fromToday ? { from: today } : {});
+    const r = await buildInvoiceDraft(prisma, z.string().min(1).parse(clientId), m.year, m.month, { today, ...(fromToday ? { from: today } : {}) });
     if (!r.ok) throw new DomainError(`Счёт не сформирован: ${r.reason}`);
     revalidateBilling();
     return { ok: true, message: "Черновик счёта готов", data: { invoiceId: r.invoiceId } };

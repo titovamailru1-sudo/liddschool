@@ -1,5 +1,6 @@
 import { invoiceTarget, monthKey, renderInvoiceReminder } from "@/domain/billing";
-import { firstOfMonth, localDateOf, parseLocalDate, startOfDay, toDbDate } from "@/domain/calendar";
+import { addDays, firstOfMonth, fromDbDate, localDateOf, parseLocalDate, startOfDay, toDbDate } from "@/domain/calendar";
+import { graceDays } from "@/domain/monthlyInvoice";
 import { monthName } from "@/domain/format";
 import { greetingName, studentNameGenitive } from "@/domain/names";
 import { Prisma } from "@prisma/client";
@@ -43,9 +44,10 @@ export async function chargeDueInvoices(db: RootDb, today: string) {
 
 /** С 3-го числа: неоплаченные счета текущего месяца — задача администратору и одно напоминание родителю. */
 export async function processOverdue(db: RootDb, today: string) {
-  const { year, month } = parseLocalDate(today);
+  // Просрочен — прошло graceDays после срока оплаты счёта (обычно 1-е → 3-е; у поздно выставленного свой срок).
+  const cutoff = addDays(today, -graceDays(await loadSettings(db)));
   const invoices = await db.monthlyInvoice.findMany({
-    where: { month: toDbDate(firstOfMonth(year, month)), chargedAt: { not: null }, status: { in: ["SENT", "VIEWED", "PARTIALLY_PAID"] } },
+    where: { dueDate: { lte: toDbDate(cutoff) }, chargedAt: { not: null }, status: { in: ["SENT", "VIEWED", "PARTIALLY_PAID"] } },
     include: { client: { include: { parents: { orderBy: [{ isPrimary: "desc" }], take: 1 } } }, paymentLinks: true },
   });
   let overdue = 0;
@@ -70,7 +72,7 @@ export async function processOverdue(db: RootDb, today: string) {
         text: renderInvoiceReminder({
           parentName: parent ? greetingName(parent.fullName) : "",
           studentNameGen: studentNameGenitive(inv.client.fullName, inv.client.gender, inv.client.fullNameGen),
-          monthName: monthName(month),
+          monthName: monthName(parseLocalDate(fromDbDate(inv.month)).month),
           amount: inv.total,
           payUrl: token ? `${appUrl()}/pay/${token}` : appUrl(),
         }).replace("Здравствуйте, ! ", "Здравствуйте! "),
@@ -103,7 +105,7 @@ export async function payrollPayoutTask(db: RootDb, today: string) {
  * Все фоновые задачи. Безопасно запускать сколько угодно раз (раз в минуту из воркера или кнопкой):
  * - с 25-го — черновики счетов на следующий месяц (один раз за месяц; отправляет администратор);
  * - списание выставленных счетов в месяц оплаты;
- * - с 3-го — просрочка: задача и напоминание;
+ * - просрочка (обычно с 3-го; у выставленного поздно — через 2 дня после его срока): задача и напоминание;
  * - поурочники: ссылки за 48 ч, «под угрозой» за 24 ч;
  * - отправка очереди сообщений.
  */
@@ -120,7 +122,7 @@ export async function runJobs(db: RootDb, now: Date, sender: MessageSender | nul
     );
   }
   result.charged = await chargeDueInvoices(db, today);
-  if (day >= settings.overdueDay) result.overdue = await processOverdue(db, today);
+  result.overdue = await processOverdue(db, today);
   result.perLesson = await processPerLesson(db, now);
   if (day >= 5) result.payrollTask = await payrollPayoutTask(db, today);
   result.unmarked = await unmarkedLessonTasks(db, now);

@@ -1,5 +1,5 @@
 import { SCHOOL_TZ } from "./constants";
-import { firstOfMonth, isoWeekday, localDateOf, type LocalDate } from "./calendar";
+import { addDays, firstOfMonth, isoWeekday, localDateOf, type LocalDate } from "./calendar";
 import {
   formatDayMonth,
   formatHours,
@@ -31,6 +31,38 @@ export interface MonthlyInvoiceInput {
   balance: number;
   /** Перенос разницы прошлых месяцев: вычеты «−», доплаты «+». */
   adjustments?: number;
+  /** Срок оплаты, если не обычный (счёт выставлен после него) — см. invoicePayBy. */
+  payBy?: LocalDate;
+}
+
+/** Сроки абонемента из настроек: оплата до invoiceDueDay-го, просрочка с overdueDay-го. */
+export interface PaymentTerms {
+  invoiceDueDay: number; // 1
+  overdueDay: number; // 3
+}
+
+/** Сколько дней после срока оплаты счёт ещё не считается просроченным (по умолчанию 1-е → 3-е: 2 дня). */
+export function graceDays(t: PaymentTerms): number {
+  return Math.max(1, t.overdueDay - t.invoiceDueDay);
+}
+
+/**
+ * Срок оплаты счёта за месяц: обычно invoiceDueDay-е число месяца. Если счёт выставлен в этот день или позже,
+ * у родителя столько же дней на оплату, сколько между сроком и просрочкой: выставлен 08.11 → оплатить до 10.11.
+ */
+export function invoicePayBy(year: number, month: number, issuedOn: LocalDate, t: PaymentTerms): LocalDate {
+  const regular = addDays(firstOfMonth(year, month), t.invoiceDueDay - 1);
+  return issuedOn < regular ? regular : addDays(issuedOn, graceDays(t));
+}
+
+/** С какого дня неоплаченный счёт просрочен: задача администратору и напоминание родителю. */
+export function invoiceOverdueOn(payBy: LocalDate, t: PaymentTerms): LocalDate {
+  return addDays(payBy, graceDays(t));
+}
+
+/** В тексте счёта заменить срок оплаты (счёт отправляют позже, чем сформировали черновик). */
+export function retargetPayBy(text: string, from: LocalDate, to: LocalDate): string {
+  return text.replace(`до ${formatDayMonth(from)}.`, `до ${formatDayMonth(to)}.`);
 }
 
 export interface InvoiceLine {
@@ -51,7 +83,7 @@ export interface MonthlyInvoiceCalc {
   debtIncluded: number; // долг, добавленный к счёту
   creditApplied: number; // переплата, вычтенная из счёта
   total: number; // к оплате, не меньше 0
-  dueDate: LocalDate; // 1-е число месяца счёта
+  dueDate: LocalDate; // срок оплаты: 1-е число месяца счёта или позже, если счёт выставлен поздно
   lines: InvoiceLine[]; // по уроку на строку, в порядке lessons
 }
 
@@ -90,7 +122,7 @@ export function calcMonthlyInvoice(input: MonthlyInvoiceInput): MonthlyInvoiceCa
     debtIncluded,
     creditApplied,
     total: Math.max(0, due + debtIncluded - creditApplied),
-    dueDate: firstOfMonth(input.year, input.month),
+    dueDate: input.payBy ?? firstOfMonth(input.year, input.month),
     lines,
   };
 }
@@ -161,7 +193,6 @@ function signedRub(n: number) {
 export function renderInvoiceMessage(m: InvoiceMessageInput): string {
   const { calc } = m;
   const n = calc.lessonsCount;
-  const mm = String(m.month).padStart(2, "0");
 
   const lines = [
     `Здравствуйте, ${m.parentName}! В ${monthNamePrep(m.month)} у ${m.studentNameGen} ${n} ${plural(n, LESSON_FORMS)} ` +
@@ -181,7 +212,7 @@ export function renderInvoiceMessage(m: InvoiceMessageInput): string {
   const extra: string[] = [];
   if (calc.debtIncluded > 0) extra.push(`Также есть задолженность ${formatRub(calc.debtIncluded)}.`);
   if (calc.creditApplied > 0) extra.push(`Учтена переплата ${formatRub(calc.creditApplied)}.`);
-  extra.push(`Итого к оплате: ${formatRub(calc.total)} до 01.${mm}.`);
+  extra.push(`Итого к оплате: ${formatRub(calc.total)} до ${formatDayMonth(calc.dueDate)}.`);
   lines.push(extra.join(" "));
   lines.push(`Оплатить: ${m.payUrl}. Lidd School`);
   return lines.join("\n");

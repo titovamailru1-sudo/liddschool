@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcMonthlyInvoice, describeLessonDates, renderInvoiceMessage } from "./monthlyInvoice";
+import { calcMonthlyInvoice, describeLessonDates, graceDays, invoiceOverdueOn, invoicePayBy, renderInvoiceMessage, retargetPayBy } from "./monthlyInvoice";
 import { occurrencesInMonth, type SeriesInput } from "./schedule";
 
 const s = (id: string, weekday: number, startTime = "16:00", durationMin = 60, startsOn = "2026-09-01"): SeriesInput => ({
@@ -115,5 +115,34 @@ describe("renderInvoiceMessage", () => {
     const l = nov([s("a", 7, "16:00", 90)]);
     const calc = calcMonthlyInvoice({ ...base, lessons: l, balance: 0 });
     expect(renderInvoiceMessage({ ...base, lessons: l, calc })).toContain("Абонемент на ноябрь: 7,5 ч × 1 500 ₽ = 11 250 ₽.");
+  });
+});
+
+describe("срок оплаты и просрочка абонемента", () => {
+  const terms = { invoiceDueDay: 1, overdueDay: 3 };
+
+  it("выставлен заранее — оплатить до 1-го, просрочка с 3-го", () => {
+    const payBy = invoicePayBy(2026, 11, "2026-10-26", terms);
+    expect(payBy).toBe("2026-11-01");
+    expect(invoiceOverdueOn(payBy, terms)).toBe("2026-11-03");
+  });
+
+  it("выставлен 08.11 — оплатить до 10.11, просрочка с 12.11 (а не сразу)", () => {
+    const payBy = invoicePayBy(2026, 11, "2026-11-08", terms);
+    expect(payBy).toBe("2026-11-10");
+    expect(invoiceOverdueOn(payBy, terms)).toBe("2026-11-12");
+  });
+
+  it("выставлен в день срока — тоже два дня на оплату", () => {
+    expect(invoicePayBy(2026, 11, "2026-11-01", terms)).toBe("2026-11-03");
+  });
+
+  it("льгота не меньше дня при странных настройках", () => {
+    expect(graceDays({ invoiceDueDay: 3, overdueDay: 3 })).toBe(1);
+  });
+
+  it("срок в тексте сообщения: 01.11 → 10.11", () => {
+    const text = "Также есть задолженность 1 700 ₽. Итого к оплате: 13 400 ₽ до 01.11.\nОплатить: …";
+    expect(retargetPayBy(text, "2026-11-01", "2026-11-10")).toBe("Также есть задолженность 1 700 ₽. Итого к оплате: 13 400 ₽ до 10.11.\nОплатить: …");
   });
 });

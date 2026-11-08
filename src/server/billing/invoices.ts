@@ -9,6 +9,7 @@ import {
 import {
   addDays,
   firstOfMonth,
+  fromDbDate,
   lastOfMonth,
   localDateOf,
   parseLocalDate,
@@ -16,7 +17,7 @@ import {
   toDbDate,
   type LocalDate,
 } from "@/domain/calendar";
-import { calcMonthlyInvoice, renderInvoiceMessage } from "@/domain/monthlyInvoice";
+import { calcMonthlyInvoice, invoicePayBy, renderInvoiceMessage, retargetPayBy } from "@/domain/monthlyInvoice";
 import { greetingName, studentNameGenitive } from "@/domain/names";
 import { lessonHours, lessonPrice, rateFor, type TariffRow } from "@/domain/pricing";
 import { DomainError } from "../errors";
@@ -170,7 +171,8 @@ export async function buildInvoiceDraft(
   clientId: string,
   year: number,
   month: number,
-  opts: { from?: LocalDate } = {},
+  /** from — счёт только на уроки с этой даты; today — когда формируем (для срока оплаты, если уже поздно). */
+  opts: { from?: LocalDate; today?: LocalDate } = {},
 ): Promise<DraftResult> {
   const client = await db.client.findUnique({
     where: { id: clientId },
@@ -215,6 +217,7 @@ export async function buildInvoiceDraft(
     perLessonRate: invoiceLessons[0]?.perLessonRate ?? 0,
     balance,
     adjustments: adjustmentsTotal,
+    payBy: opts.today ? invoicePayBy(year, month, opts.today, settings) : undefined,
   });
 
   return db.$transaction(async (tx) => {
@@ -310,10 +313,19 @@ export async function issueInvoice(db: RootDb, invoiceId: string, actorId: strin
   if (!inv) throw new DomainError("Счёт не найден");
   if (inv.status !== "DRAFT") throw new DomainError("Счёт уже выставлен");
   if (!inv.messageText) throw new DomainError("Нет текста сообщения — пересчитайте счёт");
+  // Черновик сформирован раньше, а отправляем позже срока — у родителя должно остаться время на оплату.
+  const { year, month } = parseLocalDate(fromMonth(inv.month));
+  const oldPayBy = fromDbDate(inv.dueDate);
+  const payBy = invoicePayBy(year, month, today, await loadSettings(db));
+  const later = payBy > oldPayBy;
+  const text = later ? retargetPayBy(inv.messageText, oldPayBy, payBy) : inv.messageText;
   const message = await db.$transaction(async (tx) => {
-    await tx.monthlyInvoice.update({ where: { id: invoiceId }, data: { status: "SENT", sentAt: new Date() } });
+    await tx.monthlyInvoice.update({
+      where: { id: invoiceId },
+      data: { status: "SENT", sentAt: new Date(), ...(later ? { dueDate: toDbDate(payBy), messageText: text } : {}) },
+    });
     await tx.auditLog.create({ data: { entity: "MonthlyInvoice", entityId: invoiceId, action: "issue", userId: actorId } });
-    return queueMessage(tx, { clientId: inv.clientId, kind: "invoice", text: inv.messageText!, invoiceId, createdById: actorId });
+    return queueMessage(tx, { clientId: inv.clientId, kind: "invoice", text, invoiceId, createdById: actorId });
   });
   await chargeInvoice(db, invoiceId, today);
   await refreshInvoiceStatus(db, invoiceId);

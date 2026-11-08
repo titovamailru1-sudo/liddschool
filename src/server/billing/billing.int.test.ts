@@ -245,6 +245,27 @@ describe("фоновые задачи и Telegram", () => {
     expect(await testDb.message.count({ where: { invoiceId: inv.id, kind: "invoice_reminder" } })).toBe(1);
   });
 
+  it("счёт выставлен после срока (08.11): оплатить до 10.11, просрочка и напоминание — только с 12.11", async () => {
+    await sundaySeries();
+    const draft = await buildInvoiceDraft(testDb, ctx.monthly.id, 2026, 11); // черновик от 25.10 — срок 01.11
+    const id = draft.ok ? draft.invoiceId : "";
+    expect((await testDb.monthlyInvoice.findUniqueOrThrow({ where: { id } })).messageText).toContain("до 01.11.");
+
+    await issueInvoice(testDb, id, ctx.admin.id, "2026-11-08");
+    const inv = await testDb.monthlyInvoice.findUniqueOrThrow({ where: { id } });
+    expect(inv.dueDate).toEqual(new Date("2026-11-10T00:00:00Z"));
+    const sent = await testDb.message.findFirstOrThrow({ where: { invoiceId: id, kind: "invoice" } });
+    expect(sent.text).toMatch(/Итого к оплате: 7\s500\s₽ до 10\.11\./);
+
+    for (const day of ["2026-11-08", "2026-11-10", "2026-11-11"]) await processOverdue(testDb, day);
+    expect(await testDb.message.count({ where: { invoiceId: id, kind: "invoice_reminder" } })).toBe(0);
+    expect(await testDb.task.count({ where: { autoKey: `invoice-overdue:${id}` } })).toBe(0);
+
+    await processOverdue(testDb, "2026-11-12");
+    expect(await testDb.message.count({ where: { invoiceId: id, kind: "invoice_reminder" } })).toBe(1);
+    expect(await testDb.task.count({ where: { autoKey: `invoice-overdue:${id}` } })).toBe(1);
+  });
+
   it("родитель без Telegram — сообщение «не отправлено» с причиной; после привязки по приглашению — доставлено", async () => {
     const sender = new TestSender();
     const parent = await testDb.parent.findFirstOrThrow({ where: { clientId: ctx.monthly.id } });
